@@ -42,3 +42,7 @@ download: all
 
 debug:
 	msp430-gdb -x debug.gdb
+
+zip:
+	zip sancus.zip *.c Makefile Readme *.h
+		
