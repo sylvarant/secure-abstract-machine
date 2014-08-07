@@ -86,7 +86,7 @@ extern Value MakeBoolean(unsigned int b);
 extern Value MakeLambda(Value body,Value arg);
 extern Value MakeSymbol(char *);
 extern Value MakeApplication(Value a,Value b);
-extern Value MakeIS(int f);
+extern Value MakeName(int f);
 
 #endif
 

@@ -65,4 +65,8 @@ typedef void*  (*tmalloc) (mysize);
 ENTRYPOINT void * secure_eval(int seccode);
 ENTRYPOINT void setup_secure(void* (*e)(void *),void* (*m)());
 ENTRYPOINT void sload (void);
+
+// aux
+extern void die (const char * format, ...);
+
 #endif

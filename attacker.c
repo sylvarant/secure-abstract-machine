@@ -20,6 +20,7 @@
  *-----------------------------------------------------------------------------*/
 static state * instate;
 
+
 /* 
  * ===  FUNCTION  ======================================================================
  *         Name:    MakeBoolean
@@ -91,17 +92,17 @@ extern Value MakeSymbol(char * name){
 
 /* 
  * ===  FUNCTION  ======================================================================
- *         Name:    MakeIS
+ *         Name:    MakeName
  *  Description:    create a Label to the outside
  * =====================================================================================
  */
-extern Value MakeIS(int f){   
+extern Value MakeName(int f){   
 
     Value i ;
-    struct IS * inter = mymalloc(sizeof(struct IS)); 
+    struct Name * inter = mymalloc(sizeof(struct Name)); 
     i.i = inter;
     i.i->label = f;
-    i.i->t = SEC;
+    i.i->t = NAME;
 
     return i;
 }
@@ -222,7 +223,7 @@ extern void * evaluate(void * p){
 /* 
  * ===  FUNCTION  ======================================================================
  *         Name:    run
- *  Description:    run the cesk
+ *  Description:    run the crooked cek
  * =====================================================================================
  */
 extern Value run(Value expr){
@@ -264,9 +265,9 @@ extern Value run(Value expr){
         instate->continuation->e->k    = prev;
         return run(expr.a->function);
     }
-    else if(expr.i->t == SEC){
+    else if(expr.i->t == NAME){
 
-        DEBUG_PRINT(("SEC"))
+        DEBUG_PRINT(("NAME"))
 
 		// make Continue continuation
         kont * prev = NULL;

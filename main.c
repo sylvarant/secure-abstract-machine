@@ -66,6 +66,27 @@ int putchar(int c)
 }
  #endif
 
+
+/*-----------------------------------------------------------------------------
+ *  Auxiliary shared functionality
+ *-----------------------------------------------------------------------------*/
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    die
+ *  Description:    in blitz.h
+ * =====================================================================================
+ */
+extern void die (const char * format, ...)
+{
+    va_list vargs;
+    va_start (vargs, format);
+    vfprintf (stderr, format, vargs);
+    fprintf (stderr, ".\n");
+    exit (EXIT_FAILURE);
+}
+
+
 /*-----------------------------------------------------------------------------
  *  Internal functionality
  *-----------------------------------------------------------------------------*/
@@ -141,10 +162,14 @@ static char * tostring (Value par){
     else if(par.c->t == CLOSURE){
         return generatestring("clo(",2,par.c->x,par.c->body);
     }
-    else if(par.i->t == SEC){
-        printf("Secure Value\n"); 
+    else if(par.i->t == NAME){
+        char * str = (char *) mymalloc(5 * sizeof(char));
+        str[0] = '\0';
+        return str;
     }
-    else{printf("unkown result\n");}
+    else{die("unkown result\n");}
+
+    return NULL;
 }
 
 
@@ -175,7 +200,7 @@ MAIN_TYPE main(int argc, char * argv[]){
 
     Value ret =
         MakeApplication(MakeLambda(MakeApplication(MakeApplication(MakeLambda(MakeSymbol( "x" ),MakeSymbol( "x" )),
-        (MakeIS(1))),MakeSymbol( "x" )),MakeSymbol( "x" )),MakeBoolean(1)); 
+        (MakeName(1))),MakeSymbol( "x" )),MakeSymbol( "x" )),MakeBoolean(1)); 
 
     DEBUG_PRINT(("Evaluating...")) 
     Value ans = run(ret);

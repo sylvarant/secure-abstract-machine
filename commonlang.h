@@ -22,11 +22,11 @@ struct Lambda;
 union Value ;
 struct Symbol;
 struct Application; 
-struct IS;
+struct Name;
 struct environ;
 struct Error;
 
-enum Tag { BOOLEAN, CLOSURE, LAM, SYMBOL, APPLICATION, SEC} ;
+enum Tag { BOOLEAN, CLOSURE, LAM, SYMBOL, APPLICATION, NAME} ;
 
 
 /*-----------------------------------------------------------------------------
@@ -40,7 +40,7 @@ union Value {
     struct Application * a;
     struct Closure * c;
     struct Error * e;
-    struct IS * i;
+    struct Name * i;
 };
 
 struct Boolean {
@@ -72,7 +72,7 @@ struct Closure {
     struct environ  * env;
 };
 
-struct IS{
+struct Name{
     enum Tag t;
     int label;
 };

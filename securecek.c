@@ -258,13 +258,13 @@ static int mycmpint(void *vs1, void *vs2)
  *  Description:    create a Value IS component
  * =====================================================================================
  */
-  static Value MakeIS(int f){   
+  static Value MakeName(int f){   
 
     Value i ;
-    struct IS * inter = insecmalloc(sizeof(struct IS)); 
+    struct IS * inter = insecmalloc(sizeof(struct Name)); 
     i.i = inter;
     i.i->label = f;
-    i.i->t = SEC;
+    i.i->t = NAME;
 
     return i;
 }
@@ -542,7 +542,7 @@ static secValue run(secValue expr, state * st){
             int name = getname();
             //secinsert(mystate->storage,(void *)c,(void *) (MakesecSymbol("y")).b);
             secinsert(mystate->functions,(void *)name, (void *) (MakesecSymbol("y")).b );
-            return run(MakesecLambda(MakeSI(MakeApplication(ptr,MakeIS(name))),MakesecSymbol("y")),st); 
+            return run(MakesecLambda(MakeSI(MakeApplication(ptr,MakeName(name))),MakesecSymbol("y")),st); 
         }
         return run(MakeSI(ptr),st);
     }
@@ -606,7 +606,7 @@ ENTRYPOINT void * secure_eval(int label){
         int name = getname();
         //secinsert(mystate->storage,(void *)c,);
         secinsert(mystate->functions,(void *) name, (void *) (MakesecApplication(ret,MakeSI(MakeSymbol("z")))).b  );
-        return (MakeLambda(MakeIS(name),MakeSymbol("z"))).b; 
+        return (MakeLambda(MakeName(name),MakeSymbol("z"))).b; 
     } 
 
     DEBUG_PRINT(("Invalid Return Value"))
