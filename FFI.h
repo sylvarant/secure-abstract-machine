@@ -5,7 +5,7 @@
  *
  *    Description:  FFI setup
  *
- *         Author:  Adriaan Larmuseau, ajhl
+ *         Author:  tea
  *        Company:  Uppsala Uni
  *
  * =====================================================================================

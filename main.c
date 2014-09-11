@@ -5,7 +5,7 @@
  *
  *    Description:  startpoint
  *
- *         Author:  Adriaan Larmuseau, ajhl
+ *         Author:  tea
  *        Company:  Uppsala Uni
  *
  * =====================================================================================

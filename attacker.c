@@ -5,7 +5,7 @@
  *
  *    Description:  standard cek for the lambda calculus
  *
- *         Author:  Adriaan Larmuseau, ajhl
+ *         Author:  tea
  *        Company:  Uppsala Uni
  *
  * =====================================================================================

@@ -9,7 +9,7 @@
  *        static memory issues should probably be removed 
  *        and free's should be added
  *
- *          Author:  Adriaan Larmuseau, ajhl
+ *          Author:  tea
  *        Company:  Uppsala Uni
  *
  * =====================================================================================

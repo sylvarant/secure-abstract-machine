@@ -5,7 +5,7 @@
  *
  *    Description:  Header file for the regular cesk machine
  *
- *         Author:  Adriaan Larmuseau, ajhl
+ *         Author:  tea
  *        Company:  Uppsala Uni
  *
  * =====================================================================================

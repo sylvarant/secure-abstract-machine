@@ -5,7 +5,7 @@
  *
  *    Description:  internal header for the cek implementation of MiniML
  *
- *         Author:  Adriaan Larmuseau, ajhl
+ *         Author:  tea
  *        Company:  Uppsala Uni
  *
  * =====================================================================================
