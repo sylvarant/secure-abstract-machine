@@ -3,7 +3,7 @@
  *
  *       Filename:  environment.c
  *
- *    Description: An environment for the insecure side
+ *    Description: An environment for the attacker side
  * =====================================================================================
  */
 

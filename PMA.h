@@ -1,21 +1,21 @@
 /*
  * =====================================================================================
  *
- *       Filename:  FFI.h
+ *       Filename:  PMA.h
  *
- *    Description:  FFI setup
+ *    Description:  PMA setup
  *
  *         Author:  tea
- *        Company:  Uppsala Uni
+ *        Company:  Superstar Uni
  *
  * =====================================================================================
  */
 
-#ifndef FFI_INCLUDED
-#define FFI_INCLUDED
+#ifndef PMA_INCLUDED
+#define PMA_INCLUDED
 
 // The protocol
-#include "commonlang.h"
+#include "attackerlang.h"
 
 
 /*-----------------------------------------------------------------------------

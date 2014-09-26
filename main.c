@@ -6,7 +6,7 @@
  *    Description:  startpoint
  *
  *         Author:  tea
- *        Company:  Uppsala Uni
+ *        Company:  Superstar Uni
  *
  * =====================================================================================
  */
@@ -16,9 +16,9 @@
  *-----------------------------------------------------------------------------*/
 #include <string.h>
 #include <stdarg.h>
-#include "commonlang.h"
+#include "attackerlang.h"
 #include "attacker.h"
-#include "FFI.h"
+#include "PMA.h"
 
 #ifdef JOB
     #define __MSP430_INTRINSICS_H_
@@ -162,6 +162,25 @@ static char * tostring (Value par){
     else if(par.c->t == CLOSURE){
         return generatestring("clo(",2,par.c->x,par.c->body);
     }
+    else if(par.ii->t == IF){
+        Value hack = MakeApplication(par.ii->cons,par.ii->alt); 
+        char * str = generatestring("if(",2,par.ii->cond,hack);
+        #ifndef STATIC_MEM 
+        free(hack.b);
+        #endif
+        return str;
+    }
+    else if(par.lt->t == LET){
+        Value hack = MakeApplication(par.lt->var,par.lt->expr); 
+        char * str= generatestring("let(",2,hack,par.lt->body);
+        #ifndef STATIC_MEM 
+        free(hack.b);
+        #endif
+        return str;
+    }
+    else if(par.co->t == COMP){
+        return generatestring("=_a(",2,par.co->left,par.co->right);
+    }
     else if(par.i->t == NAME){
         char * str = (char *) mymalloc(5 * sizeof(char));
         str[0] = '\0';
@@ -187,13 +206,13 @@ MAIN_TYPE main(int argc, char * argv[]){
         malloc_ptr = memory;
     #endif
 
-	// setup the insecure CEK
+	// setup the attacker CEK
     startstate(); 
 
-    // setup the secure 2/S Cesk -> results in the module code being located at position 1
+    // setup the secure cek+ -> results in the module code being located at position 1
     sload(); 
 
-    // handshake between the insecure and the secure
+    // handshake between the attacker and the secure
 	setup_secure(evaluate,mymalloc);
 
     DEBUG_PRINT(("Loading Module...")) 

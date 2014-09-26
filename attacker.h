@@ -3,10 +3,10 @@
  *
  *       Filename:  cek.h
  *
- *    Description:  Header file for the regular cesk machine
+ *    Description:  Header file for the regular cek machine
  *
  *         Author:  tea
- *        Company:  Uppsala Uni
+ *        Company:  Superstar Uni
  *
  * =====================================================================================
  */
@@ -15,8 +15,8 @@
 #define CEK_INCLUDED
 
 #include "environment.h"
-#include "commonlang.h"
-#include "FFI.h"
+#include "attackerlang.h"
+#include "PMA.h"
 #include <stdio.h>
 
 #ifdef STATIC_MEM
@@ -39,9 +39,11 @@ typedef union kont_t{
     struct execlo * c;
     struct exret * r;
     struct excont * cc;
+    struct exlet * lt;
+    struct exif * ii;
 }kont;
 
-enum Tagk { EXEC1 , EXECLO, RET, CONT } ;
+enum Tagk { EXEC1 , EXECLO, RET, CONT, KLET, KIF } ;
 
 struct exec1 {
     enum Tagk t; 
@@ -67,6 +69,22 @@ struct excont{
 	environ * env;
 };
 
+struct exlet{
+    enum Tagk t;
+    kont * k;
+    environ * env;
+    Value var;
+    Value body;
+};
+
+struct exif{
+    enum Tagk t;
+    kont * k;
+    environ * env;
+    Value cons;
+    Value alt;
+};
+
 // CEK State
 typedef struct state_t{
     environ * environment; 
@@ -86,6 +104,9 @@ extern Value MakeBoolean(unsigned int b);
 extern Value MakeLambda(Value body,Value arg);
 extern Value MakeSymbol(char *);
 extern Value MakeApplication(Value a,Value b);
+extern Value MakeLet(Value a, Value b, Value c);
+extern Value MakeComp(Value a, Value b);
+extern Value MakeIf(Value a, Value b, Value c);
 extern Value MakeName(int f);
 
 #endif

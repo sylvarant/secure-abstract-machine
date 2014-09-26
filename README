@@ -15,27 +15,27 @@ $ make exec :: for mac / linux
 # Details
 #=============================
 
-This is a Sancus enabled implementation of the result of the functional correspondence.
+This is a Sancus enabled implementation of the result of the CEK^+ machine that results from the syntactic correspondence.
 Given that malloc and free where not available during most of our tests on Sancus,
 the implementation still focusses on a simple static memory buffer which is only flushed at the end.
 Using this for anything more than a prototype will require adding the necessary free's.
 
-The secure cek for MiniML consists of the files :
+The PMA: the entrypoints are defined in :
+    * PMA.h
+
+The secure cek+ for MiniML consists of the files :
     * securecek.h
     * securecek.c
-At compile time these files are converted into a protected module of the PMA mechanism referred to as SPM.
-The secure side features doubles of the functionality to create terms in the common language (FFI) to minimize
-call backs, as well as to reduce the requirements on the insecure side.
-
-The FFI: its common language and know entrypoints are defined in :
-    * commonlanguage.h
-    * FFI.h
+At compile time these files are converted into a protected module of the PMA mechanism called SPM in Sancus.
+The secure side features doubles of the functionality to create terms in the attacker language to minimize
+call backs, as well as to reduce the requirements on the attacker side.
 
 The unkown context is a CEK implementation of MiniML_a
-This could in a sense be any C program but we chose a CEK to easily debug the behaviour of the secure cek
+This could in a sense be any C program but we chose a CEK to easily debug the behaviour of the secure cek+.
 it consists of the files :
+    * attacklanguage.h
     * environment.h
     * environment.c
-    * insecurecesk.c
+    * attacker.c
     * main.c 
 

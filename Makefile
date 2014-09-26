@@ -1,3 +1,7 @@
+#=========================================================
+# Makefile: run exec on Mac OS or linux
+#=========================================================
+
 TARGET = jobproto.elf
 TARGETSPM= spmproto.elf
 TARGET_NO_HMAC = jobproto-no-hmac.elf

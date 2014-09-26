@@ -1,21 +1,21 @@
 /*
  * =====================================================================================
  *
- *       Filename:  seccesk.c
+ *       Filename:  seccek.c
  *
- *    Description:  secure 2/S cesk implementation for the lambda calculus
+ *    Description:  secure cek+ implementation for the lambda calculus
  *    ->  When running on the Sancus Processor we used to use a static memory pool
  *        as the debug builds did not support malloc and free, now that they do the
  *        static memory issues should probably be removed 
  *        and free's should be added
  *
  *          Author:  tea
- *        Company:  Uppsala Uni
+ *        Company:  Superstar Uni
  *
  * =====================================================================================
  */
 
-#include "FFI.h"
+#include "PMA.h"
 #include "securecek.h"
 
 // Memory management
@@ -30,7 +30,7 @@
 
 /*-----------------------------------------------------------------------------
  *  Internal Function Declarations of the SPM
- *  Everything used by the secure cesk must be inside the SPM to protect
+ *  Everything used by the secure cek+ must be inside the SPM to protect
  *  the secure data
  *-----------------------------------------------------------------------------*/
 FUNCTIONALITY int secinsert(secenviron *table,void *key,void * value);
@@ -44,12 +44,16 @@ FUNCTIONALITY secValue MakesecLambda(secValue,secValue);
 FUNCTIONALITY secValue MakesecApplication(secValue ,secValue );
 FUNCTIONALITY secValue MakesecSymbol(char * );
 FUNCTIONALITY secValue MakesecClosure(secValue ,secValue , secenviron * );
+FUNCTIONALITY secValue MakesecLet(secValue a, secValue b, secValue c);
+FUNCTIONALITY secValue MakesecIf(secValue a, secValue b, secValue c);
 FUNCTIONALITY secValue MakeSI(Value v);
 FUNCTIONALITY Value MakeBoolean(unsigned int b);
 FUNCTIONALITY Value MakeSymbol(char * name);
 FUNCTIONALITY Value MakeIS(int dptr);
 FUNCTIONALITY Value MakeLambda(Value body,Value arg);
 FUNCTIONALITY Value MakeApplication(Value a, Value b);
+FUNCTIONALITY Value MakeLet(Value a, Value b, Value c);
+FUNCTIONALITY Value MakeIf(Value a, Value b, Value c);
 FUNCTIONALITY secValue applycont(secValue v,state * st);
 FUNCTIONALITY mysize mystrlen(const char *str);
 FUNCTIONALITY int mycmp(void *s1, void *s2);
@@ -237,6 +241,42 @@ static int mycmpint(void *vs1, void *vs2)
 
 /* 
  * ===  FUNCTION  ======================================================================
+ *         Name:    MakeIf
+ *  Description:    create a Value IF
+ * =====================================================================================
+ */
+extern secValue MakesecIf(secValue a, secValue b, secValue c)
+{
+    secValue v;
+    struct secIf * data = (struct secIf*) insecmalloc(sizeof(struct secIf));
+    v.ii  = data;
+    v.ii->t = SECIF;
+    v.ii->cond = a;
+    v.ii->cons = b;
+    v.ii->alt = c;
+    return v;
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    MakeLet
+ *  Description:    create a Value Let
+ * =====================================================================================
+ */
+extern secValue MakesecLet(secValue a, secValue b, secValue c)
+{
+    secValue v;
+    struct secLet * data = (struct secLet*) insecmalloc(sizeof(struct secLet));
+    v.lt  = data;
+    v.lt->t = SECLET;
+    v.lt->var = a;
+    v.lt->expr = b;
+    v.lt->body = c;
+    return v;
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
  *         Name:    MakeSI  
  *  Description:    create a secValue IS component
  * =====================================================================================
@@ -254,18 +294,17 @@ static int mycmpint(void *vs1, void *vs2)
 
 /* 
  * ===  FUNCTION  ======================================================================
- *         Name:    MakeIS  
- *  Description:    create a Value IS component
+ *         Name:    MakeName  
+ *  Description:    create a Value Name component
  * =====================================================================================
  */
   static Value MakeName(int f){   
 
     Value i ;
-    struct IS * inter = insecmalloc(sizeof(struct Name)); 
+    struct Name * inter = insecmalloc(sizeof(struct Name)); 
     i.i = inter;
     i.i->label = f;
     i.i->t = NAME;
-
     return i;
 }
 
@@ -338,6 +377,44 @@ static int mycmpint(void *vs1, void *vs2)
     v.l->argument = arg;
     v.l->body  = body;
 
+    return v;
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    MakeIf
+ *  Description:    create a Value IF
+ * =====================================================================================
+ */
+extern Value MakeIf(Value a, Value b, Value c)
+{
+    Value v;
+    struct If * data = (struct If*) insecmalloc(sizeof(struct If));
+    v.ii  = data;
+    v.ii->t = IF;
+    v.ii->cond = a;
+    v.ii->cons = b;
+    v.ii->alt = c;
+    return v;
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    MakeLet
+ *  Description:    create a Value Let
+ * =====================================================================================
+ */
+extern Value MakeLet(Value a, Value b, Value c)
+{
+    Value v;
+    struct Let * data = (struct Let*) insecmalloc(sizeof(struct Let));
+    v.lt  = data;
+    v.lt->t = LET;
+    v.lt->var = a;
+    v.lt->expr = b;
+    v.lt->body = c;
     return v;
 }
 
@@ -475,6 +552,22 @@ static secValue applycont(secValue v,state * st){
         st->continuation = st->continuation->r->k;
        return v;     
     }
+    else if(st->continuation->lt->t == SELET){
+        DEBUG_PRINT(("SELET"))
+        struct exlet * klet = st->continuation->lt;
+        secinsert(klet->env,klet->var.s->name,v.b);
+        st->environment = klet->env;
+        st->continuation = klet->k;
+        return run(klet->body,st);
+    }
+    else if(st->continuation->ii->t == SEIF){
+        DEBUG_PRINT(("SEIF"))
+        struct exif * kif = st->continuation->ii;
+        st->environment = kif->env;
+        st->continuation = kif->k;
+        if(v.b->value) { return run(kif->cons,st); }
+        else { return run(kif->alt,st); }
+    }
     else{
         DEBUG_PRINT(("Secure :: Unkown Closure"))
         exit(1);
@@ -484,7 +577,7 @@ static secValue applycont(secValue v,state * st){
 /* 
  * ===  FUNCTION  ======================================================================
  *         Name:    run
- *  Description:    run the cesk
+ *  Description:    run the cek
  * =====================================================================================
  */
 static secValue run(secValue expr, state * st){
@@ -518,9 +611,37 @@ static secValue run(secValue expr, state * st){
         st->continuation->e->k    = prev;
         return run(expr.a->function,st);
     }
+    else if(expr.lt->t == SECLET){
+        DEBUG_PRINT(("LET"))
+        kont * prev = NULL;
+        if(st->continuation != NULL) prev = st->continuation;
+        st->continuation = mymalloc(sizeof(kont));
+
+        st->continuation->lt = (struct exlet *) mymalloc(sizeof(struct exlet));
+        st->continuation->lt->t = SELET;
+        st->continuation->lt->var = expr.lt->var;
+        st->continuation->lt->body = expr.lt->body;
+        st->continuation->lt->env  = st->environment;
+        st->continuation->lt->k    = prev;
+        return run(expr.lt->expr,st);
+    }
+    else if(expr.ii->t == SECIF){
+        DEBUG_PRINT(("IF"))
+        kont * prev = NULL;
+        if(st->continuation != NULL) prev = st->continuation;
+        st->continuation = mymalloc(sizeof(kont));
+
+        st->continuation->ii = (struct exif *) mymalloc(sizeof(struct exif));
+        st->continuation->ii->t = SEIF;
+        st->continuation->ii->cons = expr.ii->cons;
+        st->continuation->ii->alt = expr.ii->alt;
+        st->continuation->ii->env  = st->environment;
+        st->continuation->ii->k    = prev;
+        return run(expr.ii->cond,st);
+    }
     else if(expr.i->t == INSEC){
 
-        DEBUG_PRINT(("Calling the Insecure"))
+        DEBUG_PRINT(("Calling the attacker"))
         
         // make Continue continuation
         kont * prev = NULL;
@@ -541,7 +662,7 @@ static secValue run(secValue expr, state * st){
         else if(ptr.c->t == CLOSURE){
             int name = getname();
             //secinsert(mystate->storage,(void *)c,(void *) (MakesecSymbol("y")).b);
-            secinsert(mystate->functions,(void *)name, (void *) (MakesecSymbol("y")).b );
+            secinsert(mystate->namemap,(void *)name, (void *) (MakesecSymbol("y")).b );
             return run(MakesecLambda(MakeSI(MakeApplication(ptr,MakeName(name))),MakesecSymbol("y")),st); 
         }
         return run(MakeSI(ptr),st);
@@ -566,13 +687,13 @@ static int getname(void){
 
 
 /*-----------------------------------------------------------------------------
- *  functions for the left machine
+ *  namemap for the left machine
  *-----------------------------------------------------------------------------*/
 
 /* 
  * ===  FUNCTION  ======================================================================
  *         Name:    secure_eval
- *  Description:    run the cesk
+ *  Description:    run the cek
  * =====================================================================================
  */
 ENTRYPOINT void * secure_eval(int label){
@@ -580,7 +701,7 @@ ENTRYPOINT void * secure_eval(int label){
     secValue sec;
     Value inp;
 
-    sec.b =  secget(mystate->functions,label); 
+    sec.b =  secget(mystate->namemap,label); 
 
     if(sec.b == NULL) return -1;
 
@@ -605,7 +726,7 @@ ENTRYPOINT void * secure_eval(int label){
         DEBUG_PRINT(("DONE"))
         int name = getname();
         //secinsert(mystate->storage,(void *)c,);
-        secinsert(mystate->functions,(void *) name, (void *) (MakesecApplication(ret,MakeSI(MakeSymbol("z")))).b  );
+        secinsert(mystate->namemap,(void *) name, (void *) (MakesecApplication(ret,MakeSI(MakeSymbol("z")))).b  );
         return (MakeLambda(MakeName(name),MakeSymbol("z"))).b; 
     } 
 
@@ -616,7 +737,7 @@ ENTRYPOINT void * secure_eval(int label){
 /* 
  * ===  FUNCTION  ======================================================================
  *         Name:    setup the secure machine   
- *  Description:    acquire necessary functions
+ *  Description:    acquire necessary namemap
  * =====================================================================================
  */
 ENTRYPOINT void setup_secure(void* (*e)(void *),void* (*m)()){
@@ -649,8 +770,8 @@ ENTRYPOINT void sload (void){
     secenviron * funtbl = (secenviron *) mymalloc(sizeof(secenviron));  
     *funtbl = tbl;
     funtbl->cmp = mycmpint;
-    mystate->functions = funtbl;
-    secinsert(mystate->functions,getname(),mm.b);
+    mystate->namemap = funtbl;
+    secinsert(mystate->namemap,getname(),mm.b);
     
     mystate->continuation = NULL;
 }

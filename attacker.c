@@ -6,7 +6,7 @@
  *    Description:  standard cek for the lambda calculus
  *
  *         Author:  tea
- *        Company:  Uppsala Uni
+ *        Company:  Superstar Uni
  *
  * =====================================================================================
  */
@@ -103,9 +103,65 @@ extern Value MakeName(int f){
     i.i = inter;
     i.i->label = f;
     i.i->t = NAME;
-
     return i;
 }
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    MakeIf
+ *  Description:    create a Value IF
+ * =====================================================================================
+ */
+extern Value MakeIf(Value a, Value b, Value c)
+{
+    Value v;
+    struct If * data = (struct If*) mymalloc(sizeof(struct If));
+    v.ii  = data;
+    v.ii->t = IF;
+    v.ii->cond = a;
+    v.ii->cons = b;
+    v.ii->alt = c;
+    return v;
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    MakeIf
+ *  Description:    create a Value COMP
+ * =====================================================================================
+ */
+extern Value MakeComp(Value a, Value b)
+{
+    Value v;
+    struct Comp * data = (struct Comp*) mymalloc(sizeof(struct Comp));
+    v.co  = data;
+    v.co->t = COMP;
+    v.co->left = a;
+    v.co->right = b;
+    return v;
+}
+
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    MakeLet
+ *  Description:    create a Value Let
+ * =====================================================================================
+ */
+extern Value MakeLet(Value a, Value b, Value c)
+{
+    Value v;
+    struct Let * data = (struct Let*) mymalloc(sizeof(struct Let));
+    v.lt  = data;
+    v.lt->t = LET;
+    v.lt->var = a;
+    v.lt->expr = b;
+    v.lt->body = c;
+    return v;
+}
+
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -113,17 +169,16 @@ extern Value MakeName(int f){
  *  Description:    create a Value Closure
  * =====================================================================================
  */
-static Value MakeClosure(Value x,Value body, environ * htbl){
-
-        Value clos;
-        struct Closure * data = (struct Closure*) mymalloc(sizeof(struct Closure));
-        clos.c = data;
-        clos.c->t      = CLOSURE;
-        clos.c->x = x;
-        clos.c->body = body;
-        clos.c->env = copyenv(htbl);
-
-		return clos;
+static Value MakeClosure(Value x,Value body, environ * htbl)
+{
+    Value clos;
+    struct Closure * data = (struct Closure*) mymalloc(sizeof(struct Closure));
+    clos.c = data;
+    clos.c->t      = CLOSURE;
+    clos.c->x = x;
+    clos.c->body = body;
+    clos.c->env = copyenv(htbl);
+	return clos;
 }
 
 
@@ -190,6 +245,22 @@ static Value inapplycont(Value v){
 	else if(instate->continuation->r->t == RET){
         instate->continuation = instate->continuation->r->k;
 		return v;     
+    }
+    else if(instate->continuation->lt->t == KLET){
+        DEBUG_PRINT(("KLET"))
+        struct exlet * klet = instate->continuation->lt;
+        insert(klet->env,klet->var.s->name,v.b);
+        instate->environment = klet->env;
+        instate->continuation = instate->continuation->lt->k;
+        return run(klet->body);
+    }
+    else if(instate->continuation->ii->t == KIF){
+        DEBUG_PRINT(("KIF"))
+        struct exif * kif = instate->continuation->ii;
+        instate->environment = kif->env;
+        instate->continuation = instate->continuation->ii->k;
+        if(v.b->value) { return run(kif->cons); }
+        else { return run(kif->alt); }
     }
     else{DEBUG_PRINT(("Unkown Closure in inapplycont"))
             exit(1);
@@ -264,6 +335,40 @@ extern Value run(Value expr){
         instate->continuation->e->env  = instate->environment;
         instate->continuation->e->k    = prev;
         return run(expr.a->function);
+    }
+    else if(expr.lt->t == LET){
+        DEBUG_PRINT(("LET"))
+        kont * prev = NULL;
+        if(instate->continuation != NULL) prev = instate->continuation;
+        instate->continuation = mymalloc(sizeof(kont));
+
+        instate->continuation->lt = (struct exlet *) mymalloc(sizeof(struct exlet));
+        instate->continuation->lt->t = KLET;
+        instate->continuation->lt->var = expr.lt->var;
+        instate->continuation->lt->body = expr.lt->body;
+        instate->continuation->lt->env  = instate->environment;
+        instate->continuation->lt->k    = prev;
+        return run(expr.lt->expr);
+    }
+    else if(expr.ii->t == IF){
+        DEBUG_PRINT(("IF"))
+        kont * prev = NULL;
+        if(instate->continuation != NULL) prev = instate->continuation;
+        instate->continuation = mymalloc(sizeof(kont));
+
+        instate->continuation->ii = (struct exif *) mymalloc(sizeof(struct exif));
+        instate->continuation->ii->t = KIF;
+        instate->continuation->ii->cons = expr.ii->cons;
+        instate->continuation->ii->alt = expr.ii->alt;
+        instate->continuation->ii->env  = instate->environment;
+        instate->continuation->ii->k    = prev;
+        return run(expr.ii->cond);
+    }
+    else if(expr.co->t == COMP){
+        DEBUG_PRINT(("COMP"))
+       
+        expr = MakeBoolean(expr.co->left.b == expr.co->right.b);
+        return inapplycont(expr);
     }
     else if(expr.i->t == NAME){
 

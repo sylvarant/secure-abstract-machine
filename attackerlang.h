@@ -1,10 +1,10 @@
 /*
  * =====================================================================================
  *
- *       Filename:  commonlang.h
+ *       Filename:  attackerlang.h
  *
  *    Description:  Header file for the common language specification that defines
- *                  the FFI
+ *                  the PMA
  *
  *       Compiler:  gcc
  *         Author:  
@@ -25,8 +25,11 @@ struct Application;
 struct Name;
 struct environ;
 struct Error;
+struct If;
+struct Let;
+struct Comp;
 
-enum Tag { BOOLEAN, CLOSURE, LAM, SYMBOL, APPLICATION, NAME} ;
+enum Tag { BOOLEAN, CLOSURE, LAM, SYMBOL, APPLICATION, LET, COMP, IF, NAME};
 
 
 /*-----------------------------------------------------------------------------
@@ -41,6 +44,9 @@ union Value {
     struct Closure * c;
     struct Error * e;
     struct Name * i;
+    struct If * ii;
+    struct Let * lt;
+    struct Comp * co;
 };
 
 struct Boolean {
@@ -69,7 +75,27 @@ struct Closure {
     enum Tag t;
     union Value x;
     union Value body; 
-    struct environ  * env;
+    struct environ_t  * env;
+};
+
+struct Let {
+    enum Tag t;
+    union Value var;
+    union Value expr;
+    union Value body;
+};
+
+struct Comp {
+    enum Tag t;
+    union Value left;
+    union Value right;
+};
+
+struct If {
+    enum Tag t;
+    union Value cond;
+    union Value cons;
+    union Value alt;
 };
 
 struct Name{
@@ -80,11 +106,6 @@ struct Name{
 
 // simplifications
 typedef union Value Value ;
-
-
-/*-----------------------------------------------------------------------------
- *  Functions
- *-----------------------------------------------------------------------------*/
 
 #endif
 

@@ -6,7 +6,7 @@
  *    Description:  internal header for the cek implementation of MiniML
  *
  *         Author:  tea
- *        Company:  Uppsala Uni
+ *        Company:  Superstar Uni
  *
  * =====================================================================================
  */
@@ -15,11 +15,11 @@
 #define SECCEK_INCLUDED
 
 // understand other side
-#include "commonlang.h"
+#include "attackerlang.h"
 
 /*-----------------------------------------------------------------------------
  * Environment + Storage + Functions - We use the same data structure
- * to reduce the amount of functions and structures that we need
+ * to reduce the amount of namemap and structures that we need
  *-----------------------------------------------------------------------------*/
 struct secenvnode {
     char *key;
@@ -43,8 +43,10 @@ union secValue ;
 struct secSymbol;
 struct secApplication; 
 struct secError;
+struct secIf;
+struct secLet;
 
-enum secTag { SECBOOLEAN, SECCLOSURE, SECLAM, SECSYMBOL, SECAPPLICATION, INSEC} ;
+enum secTag { SECBOOLEAN, SECCLOSURE, SECLAM, SECSYMBOL, SECAPPLICATION, SECLET, SECIF, INSEC} ;
 
 union secValue {
     struct secBoolean * b;
@@ -53,6 +55,8 @@ union secValue {
     struct secApplication * a;
     struct secClosure * c;
     struct secError * e;
+    struct secIf * ii;
+    struct secLet * lt;
     struct SI * i;
 };
 
@@ -85,6 +89,20 @@ struct secClosure {
     secenviron  * env;
 };
 
+struct secLet {
+    enum secTag t;
+    union secValue var;
+    union secValue expr;
+    union secValue body;
+};
+
+struct secIf {
+    enum secTag t;
+    union secValue cond;
+    union secValue cons;
+    union secValue alt;
+};
+
 struct SI{
     enum secTag t;
     union Value term;
@@ -107,9 +125,11 @@ typedef union kont_t{
     struct execlo * c;
     struct exret * r;
     struct excont * cc;
+    struct exlet * lt;
+    struct exif * ii;
 }kont;
 
-enum Tagk { SEXEC1,SEXECLO,SERET,SECONT} ;
+enum Tagk { SEXEC1,SEXECLO,SERET,SECONT, SELET, SEIF };
 
 struct exret{
     enum Tagk t;
@@ -135,11 +155,27 @@ struct execlo {
     kont * k;
 };
 
-// CESK State
+struct exlet{
+    enum Tagk t;
+    kont * k;
+    secenviron * env;
+    secValue var;
+    secValue body;
+};
+
+struct exif{
+    enum Tagk t;
+    kont * k;
+    secenviron * env;
+    secValue cons;
+    secValue alt;
+};
+
+// cek State
 typedef struct state_t{
 //    secValue * control;
     secenviron * environment; 
-    secenviron * functions;
+    secenviron * namemap;
     kont * continuation;
 }state;
 
