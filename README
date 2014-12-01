@@ -30,7 +30,7 @@ At compile time these files are converted into a protected module of the PMA mec
 The secure side features doubles of the functionality to create terms in the attacker language to minimize
 call backs, as well as to reduce the requirements on the attacker side.
 
-The unkown context is a CEK implementation of MiniML_a
+The unknown context is a CEK implementation of MiniML_a
 This could in a sense be any C program but we chose a CEK to easily debug the behaviour of the secure cek+.
 it consists of the files :
     * attacklanguage.h
