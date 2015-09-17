@@ -57,25 +57,36 @@ struct
     | TLoc of ty
 
   (* secure language definition *)
-  type term = 
+  type control = 
     | Var of variable
-    | Lam of variable * ty * term
-    | App of term * term
-    | If of term * term * term
-    | Let of variable * term * term
-    | Letrec of variable * ty * term * term
-    | Fix of term
+    | Lam of variable * ty * control
+    | App of control * control
+    | If of control * control * control
+    | Let of variable * control * control
+    | Letrec of variable * ty * control * control
+    | Fix of control
     | Bool of bool
     | Int of int
     | Unit
-    | Sequence of term * term
-    | Oper of operands * term * term
-    | Location of term ref * int
-    | Set of term * term
-    | Deref of term
-    | Alloc of term
+    | Sequence of control * control
+    | Oper of operands * control * control
+    | Location of control ref * int
+    | Set of control * control
+    | Deref of control
+    | Alloc of control
     | Foreign of pointer * ty
-    | Hash of term
+    | Hash of control
+
+  type mlkont =
+    | Done
+    | Ifkont control * control 
+
+  type ffikont
+    | Empty
+    | Waiting 
+    | Executing 
+    | Marshallin
+    | Marshallout
 
   (* value identification *)
   let rec isvalue = function
@@ -139,13 +150,13 @@ struct
     with _ -> raise (Failure "Stack is empty")
 
   (* add function to map *)
-  let add_function (lam : term) (tt : ty) : name = 
+  let add_function (lam : control) (tt : ty) : name = 
     fcount := !fcount + 1;
     let n = (FUNCTION,!fcount) in
     (name_map := ((n,lam,tt) :: !name_map)); n
     
   (* add_location *)
-  let add_location (loc : term) (tt : ty) : name =
+  let add_location (loc : control) (tt : ty) : name =
     let n = (match loc with
     | Location (x,i) -> (LOCATION,i) 
     | _ -> raise (Failure "Wrong usage of location map")) in
@@ -157,7 +168,7 @@ struct
       | (nn,num) when (nn = nty && num = i) -> true
       | _ -> false
     in
-    try let (_,term,typ) = (List.find predicate !name_map) in (term,typ)
+    try let (_,control,typ) = (List.find predicate !name_map) in (control,typ)
     with _ -> raise (Failure "Name not found")
 
   (* pop call stack *)
@@ -168,7 +179,7 @@ struct
     with _ -> raise (Failure "Stack is empty")
 
   (* push a call to the stack *)
-  let add_call (f : term -> alpha) (t : ty) : unit = 
+  let add_call (f : control -> alpha) (t : ty) : unit = 
     (call_stack := (f,t) :: !call_stack)
 
 
@@ -190,7 +201,7 @@ struct
   (*--------------------------------------------*)
 
   (* marshall out to words *) 
-  let marshallout term typ = 
+  let marshallout control typ = 
     let wordify = function
       | (_,i) -> (-i) in (* negate to differentiate *)
     let lowfunc = function
@@ -199,7 +210,7 @@ struct
     let lowloc = function
       | TLoc _ -> true
       | _ -> false in
-    let word = match term with
+    let word = match control with
       | Bool true when typ = TBool -> 1
       | Bool false when typ = TBool -> 0
       | Int i when typ = TInt -> i
@@ -248,7 +259,7 @@ struct
   (*--------------------------------------------*)
   (*                   ML+                      *)       
   (*--------------------------------------------*)
-  let rec reduce (t : term) (cont : term -> alpha) : alpha = match t with
+  let rec reduce (t : control) (cont : control -> alpha) : alpha = match t with
     | Bool _ -> (cont t)
     | Lam _ -> (cont t)
     | Int _ -> (cont t)
@@ -298,10 +309,10 @@ struct
    ===============================================*)
   let start ptr =  
     (* example program *)
-    let term = Lam("x",TInt,Sequence((Set (Alloc (Var "x"),Int 400)),(Alloc (Var "x")))) in
+    let control = Lam("x",TInt,Sequence((Set (Alloc (Var "x"),Int 400)),(Alloc (Var "x")))) in
     let typ =  TApp(TInt,(TLoc TInt)) in 
     (add_ptr ptr); 
-    reduce term (fun x -> ret_trace (marshallout x typ))
+    reduce control (fun x -> ret_trace (marshallout x typ))
 
   
   (*===============================================
@@ -319,8 +330,8 @@ struct
   let apply wn w ptr = (add_ptr ptr);
     let (f,ty) = find_name FUNCTION (-wn) in
     match ty with
-      | TApp (l,r) -> let term = (marshallin w l) in
-        reduce (App (f,term)) (fun x -> ret_trace (marshallout x r))
+      | TApp (l,r) -> let control = (marshallin w l) in
+        reduce (App (f,control)) (fun x -> ret_trace (marshallout x r))
       | _ -> raise (Failure "Internal type inconsistency")
 
 
@@ -338,11 +349,11 @@ struct
         (TApp(lt,rt), fdepth)
       | 5 -> let (tt,depth) = (conv (x/10) (y+1)) in
         ((TLoc tt),depth)
-      | _ -> raise (Failure "Could not determine type")
+      | _ -> raise (Failure "Could not decontroline type")
     in
     let (ty,_) = (conv wt 1) in
-    let term = (marshallin w ty) in
-    reduce (Alloc term) (fun x -> ret_trace (marshallout x (TLoc ty)))
+    let control = (marshallin w ty) in
+    reduce (Alloc control) (fun x -> ret_trace (marshallout x (TLoc ty)))
 
 
   (*===============================================
@@ -351,8 +362,8 @@ struct
   let set wn w ptr = (add_ptr ptr);
     let (loc,ty) = find_name LOCATION (-wn) in  
     match ty with
-      | TLoc tt -> let term = (marshallin w tt) in
-        reduce (Set (loc,term)) (fun x -> ret_trace (marshallout x TUnit))
+      | TLoc tt -> let control = (marshallin w tt) in
+        reduce (Set (loc,control)) (fun x -> ret_trace (marshallout x TUnit))
       | _ -> raise (Failure "Internal type inconsistency")
 
 
