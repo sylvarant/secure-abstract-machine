@@ -1,8 +1,9 @@
 (**************************************************************************)
-(*                         MiniML + FFI                                   *)
-(*  By Unkown                                                             *)
+(*                    LTS with context sensitive reduction                *)
+(*  By Mystery Man                                                        *)
 (**************************************************************************)
 
+(* the result of Syntactical Correspondence is tagged with @SC*)
 
 (**************************************************************************)
 (*                         Low-Level Traces                               *)
