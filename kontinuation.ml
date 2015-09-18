@@ -283,7 +283,8 @@ struct
     | _ -> raise (Failure "Can't plug outer")
 
   (* handle outer kontinuations @SC *)
-  and plug_outerkont (c : control) (k : ffikont) : alpha = match k with
+  and plug_outerkont (c : control) (k : ffikont) : alpha = 
+    match k with
     | Marshallin (lty,k) -> (match c with Term _ -> (raise (Failure "Expected word")) 
       | Word word -> 
         let v = (marshallin word lty) in 
@@ -318,7 +319,7 @@ struct
       (* Application *)
       | App ((Lam(nvar,ty,a)),b) when (isvalue b) -> (reduce (subst nvar b a) outerk)
       | App (Foreign(ptr,ty),b) when (isvalue b) -> (match ty with
-        | TApp (lt,rt) -> kontinuation := outerk;
+        | TApp (lt,rt) -> kontinuation := Waiting(k,TApp(rt,typ),outerk');
           call_trace ptr (marshallout b lt) 
         | _ -> raise (Failure "Internal Type inconsistency"))
       | App (a,b) when (isvalue a) -> reduce b (update (Appkont2(a,k)))
@@ -368,8 +369,8 @@ struct
    ===============================================*)
   let start ptr =  
     (* example program *)
-    let control = Lam("x",TInt,Sequence((Set (Alloc (Var "x"),Int 400)),(Alloc (Var "x")))) in
-    let typ =  TApp(TInt,(TLoc TInt)) in 
+    let control = Lam("x",TApp(TInt,TInt),App(Var "x",(Int 2))) in
+    let typ =  TApp(TApp(TInt,TInt),TInt) in 
     let kont = Executing (Done,typ,Empty) in (* initial set up , execute with no small kontinuation, marshall out at the end*)
     (add_ptr ptr); 
     plug_outerkont (Term control) kont
@@ -393,7 +394,7 @@ struct
   let apply wn w ptr = (add_ptr ptr);
     let (f,ty) = find_name FUNCTION (-wn) in
     match ty with
-      | TApp (l,r) -> plug_outerkont (Word w) (Marshallin (l,Executing (Appkont(f,Done),r,!kontinuation)))
+      | TApp (l,r) -> plug_outerkont (Word w) (Marshallin (l,Executing (Appkont2(f,Done),r,!kontinuation)))
       | _ -> raise (Failure "Internal type inconsistency")
 
 
@@ -513,14 +514,9 @@ let input tr = let r = attacker_act tr in
 let main () =
   (* An example of interactions between the attacker and \ML through the FFI *)
   let (_,i) = input (Attacker (Call (0,[0x2]))) in
-  let (_,j) = input (Attacker (Call (1,[i;5;0x12]))) in
-  let (_,_) = input (Attacker (Call (4,[j;0x18]))) in
-  let (_,_) = input (Attacker (Call (3,[j;8;0x22]))) in
-  let (_,_) = input (Attacker (Call (4,[j;0x26]))) in
-  let (_,j) = input (Attacker (Call (2,[j;25;0x29]))) in
-  let (_,j) = input (Attacker (Call (4,[j;0x34]))) in
-  let (_,_) = input (Attacker (Call (4,[j;0x38]))) in
-  let (_,_) = input (Attacker (Call (2,[i;2254;0x29]))) in
+  let (_,_) = input (Attacker (Call (1,[i;0x567;0x12]))) in
+  let (_,r) = input (Attacker (Call (5,[8]))) in (* This example uses a call back *)
+  assert(r = 8);
   input Done
 
 let _ = main()
