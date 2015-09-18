@@ -57,48 +57,65 @@ struct
     | TLoc of ty
 
   (* secure language definition *)
-  type control = 
+  type term = 
     | Var of variable
-    | Lam of variable * ty * control
-    | App of control * control
-    | If of control * control * control
-    | Let of variable * control * control
-    | Letrec of variable * ty * control * control
-    | Fix of control
+    | Lam of variable * ty * term
+    | App of term * term
+    | If of term * term * term
+    | Let of variable * term * term
+    | Letrec of variable * ty * term * term
+    | Fix of term
     | Bool of bool
     | Int of int
     | Unit
-    | Sequence of control * control
-    | Oper of operands * control * control
-    | Location of control ref * int
-    | Set of control * control
-    | Deref of control
-    | Alloc of control
+    | Sequence of term * term
+    | Oper of operands * term * term
+    | Location of term ref * int
+    | Set of term * term
+    | Deref of term
+    | Alloc of term
     | Foreign of pointer * ty
-    | Hash of control
+    | Hash of term
 
+  (* @SC *)
   type mlkont =
     | Done
-    | Ifkont control * control 
+    | Ifkont of term * term * mlkont
+    | Appkont of term * mlkont
+    | Appkont2 of term * mlkont
+    | Allockont of mlkont
+    | Hashkont of mlkont
+    | Operkont of operands * term * mlkont 
+    | Operkont2 of operands * term * mlkont  
+    | Derefkont of mlkont
+    | Setkont of term * mlkont 
+    | Setkont2 of term * mlkont 
+    | Letkont of variable * term * mlkont 
+    | Sequencekont of term * mlkont 
+    | Fixkont of mlkont
 
-  type ffikont
+  (* @SC *)
+  type ffikont =
     | Empty
-    | Waiting 
-    | Executing 
-    | Marshallin
-    | Marshallout
+    | Waiting of mlkont * ty * ffikont
+    | Executing of mlkont * ty * ffikont
+    | Marshallin of ty * ffikont
+    | Marshallout of ty * ffikont
 
   (* value identification *)
   let rec isvalue = function
     | Bool _ | Int _ | Unit | Location _ | Lam _ | Foreign _ -> true
     | _ -> false
 
+  (* the control @SC *)
+  type control =
+    | Term of term
+    | Word of word
 
   (*--------------------------------------------*)
-  (*                  MiniML                    *)       
+  (*               Substitution                 *)       
   (*--------------------------------------------*)
 
-  (* substitute *)
   let rec subst var value target = match target with
     | Bool _ -> target
     | Int _ -> target
@@ -131,7 +148,7 @@ struct
   (* global lists *)
   let ptr_stack = ref []
   let name_map = ref []
-  let call_stack = ref []
+  let kontinuation = ref Empty (* @SC *)
 
   (* function name counter *)
   let fcount = ref 0
@@ -150,13 +167,13 @@ struct
     with _ -> raise (Failure "Stack is empty")
 
   (* add function to map *)
-  let add_function (lam : control) (tt : ty) : name = 
+  let add_function (lam : term) (tt : ty) : name = 
     fcount := !fcount + 1;
     let n = (FUNCTION,!fcount) in
     (name_map := ((n,lam,tt) :: !name_map)); n
     
   (* add_location *)
-  let add_location (loc : control) (tt : ty) : name =
+  let add_location (loc : term) (tt : ty) : name =
     let n = (match loc with
     | Location (x,i) -> (LOCATION,i) 
     | _ -> raise (Failure "Wrong usage of location map")) in
@@ -170,17 +187,6 @@ struct
     in
     try let (_,control,typ) = (List.find predicate !name_map) in (control,typ)
     with _ -> raise (Failure "Name not found")
-
-  (* pop call stack *)
-  let pop_call = function () ->
-    try 
-      let r = (List.hd !call_stack) in
-      call_stack := (List.tl !call_stack); r
-    with _ -> raise (Failure "Stack is empty")
-
-  (* push a call to the stack *)
-  let add_call (f : control -> alpha) (t : ty) : unit = 
-    (call_stack := (f,t) :: !call_stack)
 
 
   (*--------------------------------------------*)
@@ -197,11 +203,11 @@ struct
 
 
   (*--------------------------------------------*)
-  (*                Marshall                    *)       
+  (*                   MiniML                   *)       
   (*--------------------------------------------*)
 
   (* marshall out to words *) 
-  let marshallout control typ = 
+  let marshallout value typ : word = 
     let wordify = function
       | (_,i) -> (-i) in (* negate to differentiate *)
     let lowfunc = function
@@ -210,7 +216,7 @@ struct
     let lowloc = function
       | TLoc _ -> true
       | _ -> false in
-    let word = match control with
+    let word = match value with
       | Bool true when typ = TBool -> 1
       | Bool false when typ = TBool -> 0
       | Int i when typ = TInt -> i
@@ -223,7 +229,7 @@ struct
     word
       
   (* marshall in words *)
-  let marshallin word typ = 
+  let marshallin word typ : term = 
     let rec check x y = 
       let ensure p = if not (p y)
         then raise (Failure "typing")
@@ -255,53 +261,106 @@ struct
         (check ty typ); lam
       else Foreign (word,typ))
 
+  (* handle ML kontinuations @SC *)
+  let rec plug_kont (v : term) (outerk : ffikont) : alpha = 
+    match outerk with Executing (k,typ,outerk') -> 
+    let update k' = Executing (k',typ,outerk') in
+     (match k with
+      | Ifkont (c2,c3,k') -> reduce (If (v,c2,c3)) (update k')
+      | Allockont k' -> reduce (Alloc v) (update k')
+      | Hashkont k' -> reduce (Hash v) (update k')
+      | Operkont (op,c2,k') -> reduce (Oper (op,v,c2)) (update k')
+      | Operkont2 (op,v1,k') -> reduce (Oper (op,v1,v)) (update k')
+      | Derefkont k' -> reduce (Deref v) (update k')
+      | Setkont (c2,k') -> reduce (Set(v,c2)) (update k')
+      | Setkont2 (l,k') -> reduce (Set(l,v)) (update k')
+      | Letkont (nv,c2,k') -> reduce (Let(nv,v,c2)) (update k')
+      | Sequencekont (c2,k') -> reduce (Sequence(v,c2)) (update k')
+      | Fixkont k' -> reduce v (update k')
+      | Appkont (c2,k') -> reduce (App (v,c2)) (update k')
+      | Appkont2 (v1,k') -> reduce (App (v1,v)) (update k')
+      | Done -> plug_outerkont (Term v) (Marshallout (typ,outerk')))
+    | _ -> raise (Failure "Can't plug outer")
 
-  (*--------------------------------------------*)
-  (*                   ML+                      *)       
-  (*--------------------------------------------*)
-  let rec reduce (t : control) (cont : control -> alpha) : alpha = match t with
-    | Bool _ -> (cont t)
-    | Lam _ -> (cont t)
-    | Int _ -> (cont t)
-    | Unit -> (cont Unit)
-    | Foreign _ -> (cont t)
-    | Location _ -> (cont t)
-    | If ((Bool true),b,c) -> (reduce b cont)
-    | If ((Bool false),b,c) -> (reduce c cont)
-    | If (a,b,c) -> (reduce a (fun x -> (reduce (If (x,b,c))  cont)))
-    | Let (nv,a,b) when (isvalue a) -> (reduce (subst nv a b) cont)
-    | Let (nv,a,b) -> (reduce a (fun x -> (reduce (Let(nv,x,b)) cont)))
-    | App ((Lam(nvar,ty,a)),b) when (isvalue b) -> (reduce (subst nvar b a) cont)
-    | App (Foreign(ptr,ty),b) when (isvalue b) -> (match ty with
-      | TApp (lt,rt) -> (add_call cont rt);
-        call_trace ptr (marshallout b lt) 
-      | _ -> raise (Failure "Internal Type inconsistency"))
-    | App (a,b) when (isvalue a) -> reduce b (fun x -> reduce (App (a,x)) cont)
-    | App (a,b) -> reduce a (fun x -> reduce (App (x,b)) cont)
-    | Fix (Lam (nv,ty,a)) -> reduce (subst nv (Fix (Lam (nv,ty,a))) a) cont
-    | Fix a -> reduce a (fun x -> reduce (Fix x) cont)
-    | Sequence (Unit,b) -> (reduce b cont)
-    | Sequence (a,b) -> reduce a (fun x -> reduce (Sequence (x,b)) cont)
-    | Letrec (nvar,ty,a,b) -> reduce (Let (nvar,Fix (Lam (nvar,ty,a)) ,b)) cont
-    | Set (Location (a,_),b) when (isvalue b) -> a := b; (cont Unit)
-    | Set (Location (a,i),b) -> reduce b (fun x -> reduce (Set((Location (a,i)), x)) cont)
-    | Set (a,b) -> reduce a (fun x -> reduce (Set (x,b)) cont)
-    | Deref (Location (a,_)) -> (cont !a)
-    | Deref a -> reduce a (fun x -> reduce (Deref x) cont)
-    | Alloc a  when (isvalue a) -> lcount := !lcount + 1; (cont (Location ((ref a),!lcount)))
-    | Alloc a -> reduce a (fun x -> reduce (Alloc x) cont)
-    | Hash (Location (a,i)) -> cont (Int i) 
-    | Hash a -> reduce a (fun x -> reduce (Hash x) cont)
-    | Oper (op,Int a,Int b) -> cont (match op with 
-      | PLUS -> Int (a+b)
-      | MINUS -> Int (a-b)
-      | TIMES -> Int (a*b)
-      | EQUALS -> Bool (a = b)
-      | LESSTHEN -> Bool (a < b)
-      | LARGERTHEN -> Bool (a > b) ) 
-    | Oper (op,a,b) when isvalue a -> reduce b (fun x -> reduce (Oper (op,a,x)) cont)
-    | Oper (op,a,b) -> reduce a (fun x -> reduce (Oper (op,x,b)) cont)
-    | _ -> raise (Failure "Implementation mistake")
+  (* handle outer kontinuations @SC *)
+  and plug_outerkont (c : control) (k : ffikont) : alpha = match k with
+    | Marshallin (lty,k) -> (match c with Term _ -> (raise (Failure "Expected word")) 
+      | Word word -> 
+        let v = (marshallin word lty) in 
+          (plug_outerkont (Term v) k))
+    | Marshallout (typ,k') -> (match c with Word _ -> (raise (Failure "Expected value")) 
+      | Term v -> (kontinuation := k';  (ret_trace (marshallout v typ))))
+    | Executing _ -> (match c with Term t -> (reduce t k) 
+        | _ -> raise (Failure "not a term"))
+    | Waiting (k',(TApp (l,r)),outerk') -> plug_outerkont c (Executing (k',r,outerk'))
+    | Empty -> raise (Failure "Can't execute nothing")
+    | _ -> raise (Failure "Type mismatch")
+
+  (* reduce the terms @SC *)
+  and reduce (t : term) (outerk : ffikont) : alpha = 
+    match outerk with Executing (k,typ,outerk') -> 
+    (let update k' = Executing (k',typ,outerk') in
+    (match t with
+
+      (* values *)
+      | v when (isvalue t) -> (plug_kont v outerk)
+
+      (* if term *)
+      | If ((Bool true),b,c) -> (reduce b outerk)
+      | If ((Bool false),b,c) -> (reduce c outerk)
+      | If (a,b,c) -> (reduce a (update (Ifkont(b,c,k))))
+
+      (* let term *)
+      | Let (nv,a,b) when (isvalue a) -> (reduce (subst nv a b) outerk)
+      | Let (nv,a,b) -> reduce a (update (Letkont(nv,b,k)))
+      | Letrec (nvar,ty,a,b) -> reduce (Let (nvar,Fix (Lam (nvar,ty,a)) ,b)) outerk
+
+      (* Application *)
+      | App ((Lam(nvar,ty,a)),b) when (isvalue b) -> (reduce (subst nvar b a) outerk)
+      | App (Foreign(ptr,ty),b) when (isvalue b) -> (match ty with
+        | TApp (lt,rt) -> kontinuation := outerk;
+          call_trace ptr (marshallout b lt) 
+        | _ -> raise (Failure "Internal Type inconsistency"))
+      | App (a,b) when (isvalue a) -> reduce b (update (Appkont2(a,k)))
+      | App (a,b) -> reduce a (update (Appkont(b,k)))
+
+      (* Fix operator *) 
+      | Fix (Lam (nv,ty,a)) -> reduce (subst nv (Fix (Lam (nv,ty,a))) a) outerk
+      | Fix a -> reduce a (update (Fixkont k))
+
+      (* sequence *)
+      | Sequence (Unit,b) -> (reduce b outerk)
+      | Sequence (a,b) -> reduce a (update (Sequencekont (b,k)))
+
+      (* set location *)
+      | Set (Location (a,_),b) when (isvalue b) -> a := b; (plug_kont Unit outerk)
+      | Set (Location (a,i),b) -> reduce b (update (Setkont(Location (a,i),k)))
+      | Set (a,b) -> reduce a (update (Setkont(b,k)))
+
+      (* dereference *)
+      | Deref (Location (a,_)) -> (plug_kont !a outerk)
+      | Deref a -> reduce a (update (Derefkont k))
+
+      (* allocation *)
+      | Alloc a  when (isvalue a) -> lcount := !lcount + 1; (plug_kont (Location ((ref a),!lcount)) outerk)
+      | Alloc a -> (reduce a (update (Allockont k)))
+
+      (* Hash*)
+      | Hash (Location (a,i)) -> plug_kont (Int i) outerk
+      | Hash a -> reduce a (update (Hashkont k))
+
+      (* operands *)
+      | Oper (op,Int a,Int b) -> plug_kont (match op with 
+        | PLUS -> Int (a+b)
+        | MINUS -> Int (a-b)
+        | TIMES -> Int (a*b)
+        | EQUALS -> Bool (a = b)
+        | LESSTHEN -> Bool (a < b)
+        | LARGERTHEN -> Bool (a > b) ) outerk 
+      | Oper (op,a,b) when isvalue a -> reduce b (update (Operkont2 (op,a,k)))
+      | Oper (op,a,b) -> reduce a (update (Operkont (op,b,k)))
+      | _ -> raise (Failure "Implementation mistake")))
+    | _ -> raise (Failure "Incorrect Kontinuation")
 
 
   (*===============================================
@@ -311,17 +370,21 @@ struct
     (* example program *)
     let control = Lam("x",TInt,Sequence((Set (Alloc (Var "x"),Int 400)),(Alloc (Var "x")))) in
     let typ =  TApp(TInt,(TLoc TInt)) in 
+    let kont = Executing (Done,typ,Empty) in (* initial set up , execute with no small kontinuation, marshall out at the end*)
     (add_ptr ptr); 
-    reduce control (fun x -> ret_trace (marshallout x typ))
+    plug_outerkont (Term control) kont
 
   
   (*===============================================
     # return back entry point 
    ===============================================*)
-  let returnback w = let (f,ty) = pop_call () in
-    match ty with 
-      | TApp (l,r) -> reduce (marshallin w l) f
-      | _ -> raise (Failure "Internal type inconsistency")
+  let returnback w = 
+    match !kontinuation with
+    | Waiting(_,ty,_) ->
+      (match ty with 
+        | TApp (lty,r) -> plug_outerkont (Word w) (Marshallin (lty,!kontinuation))
+        | _ -> raise (Failure "Internal type inconsistency"))
+    | _ -> raise (Failure "State machine not waiting on input")
 
 
   (*===============================================
@@ -330,8 +393,7 @@ struct
   let apply wn w ptr = (add_ptr ptr);
     let (f,ty) = find_name FUNCTION (-wn) in
     match ty with
-      | TApp (l,r) -> let control = (marshallin w l) in
-        reduce (App (f,control)) (fun x -> ret_trace (marshallout x r))
+      | TApp (l,r) -> plug_outerkont (Word w) (Marshallin (l,Executing (Appkont(f,Done),r,!kontinuation)))
       | _ -> raise (Failure "Internal type inconsistency")
 
 
@@ -352,8 +414,7 @@ struct
       | _ -> raise (Failure "Could not decontroline type")
     in
     let (ty,_) = (conv wt 1) in
-    let control = (marshallin w ty) in
-    reduce (Alloc control) (fun x -> ret_trace (marshallout x (TLoc ty)))
+    plug_outerkont (Word w) (Marshallin (ty,Executing ((Allockont Done), (TLoc ty), !kontinuation)))
 
 
   (*===============================================
@@ -362,8 +423,7 @@ struct
   let set wn w ptr = (add_ptr ptr);
     let (loc,ty) = find_name LOCATION (-wn) in  
     match ty with
-      | TLoc tt -> let control = (marshallin w tt) in
-        reduce (Set (loc,control)) (fun x -> ret_trace (marshallout x TUnit))
+      | TLoc tt -> plug_outerkont (Word w) (Marshallin (tt,Executing (Setkont2(loc,Done),TUnit,!kontinuation))) 
       | _ -> raise (Failure "Internal type inconsistency")
 
 
@@ -373,7 +433,7 @@ struct
   let deref wn ptr = (add_ptr ptr);
     let (loc,ty) = find_name LOCATION (-wn) in  
     match ty with
-      | TLoc tt -> reduce (Deref loc) (fun x -> ret_trace (marshallout x tt))
+      | TLoc tt -> plug_outerkont (Term (Deref loc)) (Executing (Done,tt,!kontinuation))
       | _ -> raise (Failure "Internal type inconsistency")
 
 end
@@ -416,6 +476,9 @@ let attacker_act (tr : alpha) : alpha =  print_trace tr;
       | 4 -> (match ls with
         | wn::ptr::[] -> (SecureML.deref wn  ptr)
         | _ -> raise (Failure "Attacker"))
+      | 5 -> (match ls with
+        | w::[] -> (SecureML.returnback w)
+        | _ -> raise (Failure "Attacker"))
       | _ -> raise (Failure "Attacker"))
     | Ret (_,w) -> (SecureML.returnback w))
   | _ -> raise (Failure "Attacker")
@@ -439,6 +502,7 @@ let input tr = let r = attacker_act tr in
      2   :: Allocation entry point
      3   :: Location set entry point
      4   :: Location Dereference entry point
+     5   :: Return back entry point
 *)
 
 

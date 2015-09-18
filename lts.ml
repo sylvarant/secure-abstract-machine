@@ -83,10 +83,9 @@ struct
 
 
   (*--------------------------------------------*)
-  (*                  MiniML                    *)       
+  (*               Substitution                 *)       
   (*--------------------------------------------*)
 
-  (* substitute *)
   let rec subst var value target = match target with
     | Bool _ -> target
     | Int _ -> target
@@ -245,7 +244,7 @@ struct
 
 
   (*--------------------------------------------*)
-  (*                   ML+                      *)       
+  (*                   MiniML                   *)       
   (*--------------------------------------------*)
   let rec reduce (t : term) (cont : term -> alpha) : alpha = match t with
     | Bool _ -> (cont t)
@@ -404,6 +403,9 @@ let attacker_act (tr : alpha) : alpha =  print_trace tr;
       | 4 -> (match ls with
         | wn::ptr::[] -> (SecureML.deref wn  ptr)
         | _ -> raise (Failure "Attacker"))
+      | 5 -> (match ls with
+        | w::[] -> (SecureML.returnback w)
+        | _ -> raise (Failure "Attacker"))
       | _ -> raise (Failure "Attacker"))
     | Ret (_,w) -> (SecureML.returnback w))
   | _ -> raise (Failure "Attacker")
@@ -427,6 +429,7 @@ let input tr = let r = attacker_act tr in
      2   :: Allocation entry point
      3   :: Location set entry point
      4   :: Location Dereference entry point
+     5   :: Return back entry point
 *)
 
 
