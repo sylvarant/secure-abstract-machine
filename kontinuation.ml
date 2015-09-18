@@ -276,7 +276,7 @@ struct
       | Setkont2 (l,k') -> reduce (Set(l,v)) (update k')
       | Letkont (nv,c2,k') -> reduce (Let(nv,v,c2)) (update k')
       | Sequencekont (c2,k') -> reduce (Sequence(v,c2)) (update k')
-      | Fixkont k' -> reduce v (update k')
+      | Fixkont k' -> reduce (Fix v) (update k')
       | Appkont (c2,k') -> reduce (App (v,c2)) (update k')
       | Appkont2 (v1,k') -> reduce (App (v1,v)) (update k')
       | Done -> plug_outerkont (Term v) (Marshallout (typ,outerk')))
