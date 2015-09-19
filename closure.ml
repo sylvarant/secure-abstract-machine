@@ -72,17 +72,18 @@ struct
     | Unit
     | Sequence of term * term
     | Oper of operands * term * term
-    | Location of term ref * int
+    | Location of closure ref * int (* @SC *)
     | Set of term * term
     | Deref of term
     | Alloc of term
     | Foreign of pointer * ty
     | Hash of term
+
   (* environment @SC *)
   and environment = string -> term
 
   (* closure @SC *)
-  type closure =  
+  and closure =  
     | Closure of term * environment
     | Clapp of closure * closure
 
@@ -118,17 +119,21 @@ struct
 
   (* the control *)
   type control =
-    | Term of term
+    | Term of closure (* @SC *)
     | Word of word
+
 
 
   (*--------------------------------------------*)
   (*                   State                    *)       
   (*--------------------------------------------*)
 
+  (* @SC deal with non closure locations *)
+  type mapcontent = Cl of closure | Loc of term
+
   (* global lists *)
   let ptr_stack = ref []
-  let name_map = ref []
+  let name_map : (name * mapcontent * ty) list ref = ref []
   let kontinuation = ref Empty 
 
   (* function name counter *)
@@ -147,18 +152,18 @@ struct
       ptr_stack := (List.tl !ptr_stack); r
     with _ -> raise (Failure "Stack is empty")
 
-  (* add function to map *)
-  let add_function (lam : term) (tt : ty) : name = 
+  (* add function to map @SC *)
+  let add_function (lam : closure) (tt : ty) : name = 
     fcount := !fcount + 1;
     let n = (FUNCTION,!fcount) in
-    (name_map := ((n,lam,tt) :: !name_map)); n
+    (name_map := ((n,Cl lam,tt) :: !name_map)); n
     
   (* add_location *)
   let add_location (loc : term) (tt : ty) : name =
     let n = (match loc with
     | Location (x,i) -> (LOCATION,i) 
     | _ -> raise (Failure "Wrong usage of location map")) in
-    name_map := (n,loc,tt) :: !name_map; n
+    name_map := (n,Loc loc,tt) :: !name_map; n
 
   (* find name in map *)
   let find_name nty i =
@@ -191,7 +196,7 @@ struct
   (*--------------------------------------------*)
 
   (* marshall out to words *) 
-  let marshallout value typ : word = 
+  let marshallout closure typ : word =  (* @SC *)
     let wordify = function
       | (_,i) -> (-i) in (* negate to differentiate *)
     let lowfunc = function
@@ -200,20 +205,22 @@ struct
     let lowloc = function
       | TLoc _ -> true
       | _ -> false in
-    let word = match value with
-      | Bool true when typ = TBool -> 1
-      | Bool false when typ = TBool -> 0
-      | Int i when typ = TInt -> i
-      | Lam _ as z when (lowfunc typ) -> wordify (add_function z typ) 
-      | Unit when typ = TUnit -> 0
-      | Location _ as z when (lowloc typ) -> wordify (add_location z typ)
-      | Foreign (ptr,ty) when ty = typ -> ptr
-      | _ -> raise (Failure "Marshalling out Failed") 
-    in
-    word
+    match closure with
+    | Closure (value,env) ->
+      let word = (match value with
+        | Bool true when typ = TBool -> 1
+        | Bool false when typ = TBool -> 0
+        | Int i when typ = TInt -> i
+        | Lam _ as z when (lowfunc typ) -> wordify (add_function (Closure(z,env)) typ) 
+        | Unit when typ = TUnit -> 0
+        | Location _  when (lowloc typ) -> wordify (add_location value typ)
+        | Foreign (ptr,ty) when ty = typ -> ptr
+        | _ -> raise (Failure "Marshalling out Failed")) 
+      in word
+    | _ -> raise (Failure "Closure application can't be marshalled")
       
-  (* marshall in words *)
-  let marshallin word typ : term = 
+  (* marshall in words *) (* @SC *)
+  let marshallin word typ : closure = 
     let rec check x y = 
       let ensure p = if not (p y)
         then raise (Failure "typing")
@@ -232,18 +239,22 @@ struct
     in
     match typ with
     | TBool -> (match word with
-      | 0 -> (Bool false)
-      | _ -> (Bool true))
-    | TInt -> (Int word)
-    | TUnit -> Unit
+      | 0 -> Closure((Bool false),empty_env)
+      | _ -> Closure((Bool true),empty_env))
+    | TInt -> Closure((Int word),empty_env)
+    | TUnit -> Closure(Unit,empty_env)
     | TLoc a -> (if word < 0 
-      then let (loc,ty) = (find_name LOCATION (-word)) in
-        (check ty typ); loc
+      then 
+        (match (find_name LOCATION (-word)) with 
+          | (Loc loc,ty) -> (check ty typ); Closure(loc,empty_env)
+          | _ -> raise (Failure "Found lambda where location was expected"))
       else raise (Failure "Foreign locaitons not supported"))
     | TApp (a,b) -> (if word < 0
-      then let (lam,ty) = (find_name FUNCTION (-word)) in
-        (check ty typ); lam
-      else Foreign (word,typ))
+      then 
+        (match (find_name FUNCTION (-word)) with 
+          | (Cl lam,ty) -> (check ty typ); lam
+          | _ -> (raise (Failure "Found location where lambda expected")))
+      else Closure(Foreign (word,typ),empty_env))
 
   (* handle ML kontinuations *)
   let rec plug_kont (cl : closure) (outerk : ffikont) : alpha = 
@@ -251,23 +262,23 @@ struct
     let update k' = Executing (k',typ,outerk') in
     (match cl with Clapp _ -> raise (Failure "Double Closure") 
       | Closure (v,_) -> (match k with
-        | Ifkont (c2,c3,k',e) -> reduce ((If (v,c2,c3)),e) (update k')
-        | Allockont (k',e) -> reduce ((Alloc v),e) (update k')
-        | Hashkont (k',e) -> reduce ((Hash v),e) (update k')
-        | Operkont (op,c2,k',e) -> reduce ((Oper (op,v,c2)),e) (update k')
-        | Operkont2 (op,v1,k',e) -> reduce ((Oper (op,v1,v)),e) (update k')
-        | Derefkont (k',e) -> reduce ((Deref v),e) (update k')
-        | Setkont (c2,k',e) -> reduce ((Set(v,c2)),e) (update k')
-        | Setkont2 (l,k',e) -> reduce ((Set(l,v)),e) (update k')
-        | Letkont (nv,c2,k',e) -> reduce ((Let(nv,v,c2)),e) (update k')
-        | Sequencekont (c2,k',e) -> reduce (Sequence(v,c2,e)) (update k')
-        | Fixkont (k',e) -> reduce (Fix v,e) (update k')
+        | Ifkont (c2,c3,k',e) -> reduce (Closure((If (v,c2,c3)),e)) (update k')
+        | Allockont (k',e) -> reduce (Closure((Alloc v),e)) (update k')
+        | Hashkont (k',e) -> reduce (Closure((Hash v),e)) (update k')
+        | Operkont (op,c2,k',e) -> reduce (Closure((Oper (op,v,c2)),e)) (update k')
+        | Operkont2 (op,v1,k',e) -> reduce (Closure((Oper (op,v1,v)),e)) (update k')
+        | Derefkont (k',e) -> reduce (Closure((Deref v),e)) (update k')
+        | Setkont (c2,k',e) -> reduce (Closure((Set(v,c2)),e)) (update k')
+        | Setkont2 (l,k',e) -> reduce (Closure((Set(l,v)),e)) (update k')
+        | Letkont (nv,c2,k',e) -> reduce (Closure((Let(nv,v,c2)),e)) (update k')
+        | Sequencekont (c2,k',e) -> reduce (Closure(Sequence(v,c2),e)) (update k')
+        | Fixkont (k',e) -> reduce (Closure(Fix v,e)) (update k')
         | Appkont (c2,k') -> reduce (Clapp (cl,c2)) (update k')
         | Appkont2 (cl1,k') -> reduce (Clapp (cl1,cl)) (update k')
-        | Done -> plug_outerkont (Term v) (Marshallout (typ,outerk'))))
+        | Done -> plug_outerkont (Term cl) (Marshallout (typ,outerk'))))
     | _ -> raise (Failure "Can't plug outer")
 
-  (* handle outer kontinuations *)
+  (* handle outer kontinuations *) (* @SC *)
   and plug_outerkont (c : control) (k : ffikont) : alpha = 
     match k with
     | Marshallin (lty,k) -> (match c with Term _ -> (raise (Failure "Expected word")) 
@@ -276,7 +287,7 @@ struct
           (plug_outerkont (Term v) k))
     | Marshallout (typ,k') -> (match c with Word _ -> (raise (Failure "Expected value")) 
       | Term v -> (kontinuation := k';  (ret_trace (marshallout v typ))))
-    | Executing _ -> (match c with Term t -> (reduce (Closure(t,empty_env)) k) 
+    | Executing _ -> (match c with Term cl -> (reduce cl k) 
         | _ -> raise (Failure "not a term"))
     | Waiting (k',(TApp (l,r)),outerk') -> plug_outerkont c (Executing (k',r,outerk'))
     | Empty -> raise (Failure "Can't execute nothing")
@@ -285,9 +296,17 @@ struct
   (* reduce the terms *)
   and reduce (cl : closure) (outerk : ffikont) : alpha = 
     match outerk with Executing (k,typ,outerk') -> 
-    (let update k' = Executing (k',typ,outerk') in
+    let update k' = Executing (k',typ,outerk') in
+    (* handle closure @SC *)
     (match cl with 
-      | Clapp (Closure(v1,e1),y) when (isvalue v1) -> reduce y 
+      | Clapp (Closure((Lam(nvar,ty,a)),e1),Closure(v2,e2)) when (isvalue v2) -> reduce (Closure(a,(update_env nvar v2 e1))) outerk
+      | Clapp (Closure(Foreign(ptr,ty),e1),Closure(v2,e2)) when (isvalue v2) -> 
+        (match ty with
+          | TApp (lt,rt) -> kontinuation := Waiting(k,TApp(rt,typ),outerk');
+            call_trace ptr (marshallout (Closure(v2,e2)) lt) 
+          | _ -> raise (Failure "Internal Type inconsistency"))
+      | Clapp (Closure(v1,e1) as x,y) when (isvalue v1) -> reduce y (update (Appkont2(x,k)))  
+      | Clapp (x,y) -> reduce x (update (Appkont(y,k)))
       | Closure (t,env) ->
       (match t with
 
@@ -295,7 +314,7 @@ struct
         | Var nv -> reduce (Closure((env nv),env)) outerk
 
         (* values *)
-        | v when (isvalue t) -> (plug_kont (Closure(v,e)) outerk)
+        | v when (isvalue t) -> (plug_kont (Closure(v,env)) outerk)
 
         (* if term *)
         | If ((Bool true),b,c) -> (reduce (Closure(b,env)) outerk)
@@ -303,22 +322,16 @@ struct
         | If (a,b,c) -> (reduce (Closure(a,env)) (update (Ifkont(b,c,k,env))))
 
         (* let term *)
-        | Let (nv,a,b) when (isvalue a) -> (reduce (subst nv a b) outerk)
+        | Let (nv,a,b) when (isvalue a) -> reduce (Closure(b,(update_env nv a env))) outerk
         | Let (nv,a,b) -> reduce (Closure(a,env)) (update (Letkont(nv,b,k,env)))
         | Letrec (nvar,ty,a,b) -> reduce (Closure((Let (nvar,Fix (Lam (nvar,ty,a)),b)),env)) outerk
 
-        (* Application *)
+        (* Application @SC *)
         | App (t1,t2) -> reduce (Clapp(Closure (t1,env),Closure (t2,env))) outerk
-        | App ((Lam(nvar,ty,a)),b) when (isvalue b) -> (reduce (subst nvar b a) outerk)
-        | App (Foreign(ptr,ty),b) when (isvalue b) -> (match ty with
-          | TApp (lt,rt) -> kontinuation := Waiting(k,TApp(rt,typ),outerk');
-            call_trace ptr (marshallout b lt) 
-          | _ -> raise (Failure "Internal Type inconsistency"))
-        | App (a,b) when (isvalue a) -> reduce b (update (Appkont2(a,k)))
-        | App (a,b) -> reduce (Closure(a,env)) (update (Appkont(b,k)))
+
 
         (* Fix operator *) 
-        | Fix (Lam (nv,ty,a)) -> reduce (subst nv (Fix (Lam (nv,ty,a))) a) outerk
+        | Fix (Lam (nv,ty,a)) -> reduce (Closure(a,(update_env nv (Fix (Lam (nv,ty,a))) env)))  outerk
         | Fix a -> reduce (Closure(a,env)) (update (Fixkont (k,env)))
 
         (* sequence *)
@@ -326,16 +339,16 @@ struct
         | Sequence (a,b) -> reduce (Closure(a,env)) (update (Sequencekont (b,k,env)))
 
         (* set location *)
-        | Set (Location (a,_),b) when (isvalue b) -> a := b; (plug_kont (Unit,env) outerk)
+        | Set (Location (a,_),b) when (isvalue b) -> a := (Closure (b,env)); (plug_kont (Closure(Unit,env)) outerk)
         | Set (Location (a,i),b) -> reduce (Closure(b,env)) (update (Setkont(Location (a,i),k,env)))
         | Set (a,b) -> reduce (Closure(a,env)) (update (Setkont(b,k,env)))
 
         (* dereference *)
-        | Deref (Location (a,_)) -> (plug_kont (Closure(!a,env)) outerk)
+        | Deref (Location (a,_)) -> (plug_kont !a outerk)
         | Deref a -> reduce (Closure(a,env)) (update (Derefkont (k,env)))
 
         (* allocation *)
-        | Alloc a  when (isvalue a) -> lcount := !lcount + 1; (plug_kont (Closure((Location ((ref a),!lcount)),env)) outerk)
+        | Alloc a  when (isvalue a) -> lcount := !lcount + 1; (plug_kont (Closure((Location ((ref (Closure(a,env))),!lcount)),env)) outerk)
         | Alloc a -> (reduce (Closure(a,env)) (update (Allockont (k,env))))
 
         (* Hash*)
@@ -352,8 +365,7 @@ struct
           | LARGERTHEN -> Bool (a > b) ),env)) outerk 
         | Oper (op,a,b) when isvalue a -> reduce (Closure(b,env)) (update (Operkont2 (op,a,k,env)))
         | Oper (op,a,b) -> reduce (Closure(a,env)) (update (Operkont (op,b,k,env)))
-        | _ -> raise (Failure "Implementation mistake"))
-      | _ -> raise (Failure "Double closure application?"))
+        | _ -> raise (Failure "Implementation mistake")))
     | _ -> raise (Failure "Incorrect Kontinuation")
 
 
@@ -366,7 +378,7 @@ struct
     let typ =  TApp(TApp(TInt,TInt),TInt) in 
     let kont = Executing (Done,typ,Empty) in (* initial set up , execute with no small kontinuation, marshall out at the end*)
     (add_ptr ptr); 
-    plug_outerkont (Term control) kont
+    plug_outerkont (Term (Closure(control,empty_env))) kont
 
   
   (*===============================================
@@ -385,10 +397,11 @@ struct
     # apply entry point 
    ===============================================*)
   let apply wn w ptr = (add_ptr ptr);
-    let (f,ty) = find_name FUNCTION (-wn) in
-    match ty with
-      | TApp (l,r) -> plug_outerkont (Word w) (Marshallin (l,Executing (Appkont2(f,Done),r,!kontinuation)))
-      | _ -> raise (Failure "Internal type inconsistency")
+    match find_name FUNCTION (-wn) with
+      | (Cl f,ty) -> (match ty with
+        | TApp (l,r) -> plug_outerkont (Word w) (Marshallin (l,Executing (Appkont2(f,Done),r,!kontinuation)))
+        | _ -> raise (Failure "Internal type inconsistency"))
+      | _ -> raise (Failure "Found location where closure expected") 
 
 
   (*===============================================
@@ -408,27 +421,29 @@ struct
       | _ -> raise (Failure "Could not decontroline type")
     in
     let (ty,_) = (conv wt 1) in
-    plug_outerkont (Word w) (Marshallin (ty,Executing ((Allockont Done), (TLoc ty), !kontinuation)))
+    plug_outerkont (Word w) (Marshallin (ty,Executing ((Allockont (Done,empty_env)), (TLoc ty), !kontinuation)))
 
 
   (*===============================================
     # set entry point 
    ===============================================*)
   let set wn w ptr = (add_ptr ptr);
-    let (loc,ty) = find_name LOCATION (-wn) in  
-    match ty with
-      | TLoc tt -> plug_outerkont (Word w) (Marshallin (tt,Executing (Setkont2(loc,Done),TUnit,!kontinuation))) 
-      | _ -> raise (Failure "Internal type inconsistency")
+    match (find_name LOCATION (-wn)) with
+      | (Loc loc,ty) -> (match ty with
+        | TLoc tt -> plug_outerkont (Word w) (Marshallin (tt,Executing (Setkont2(loc,Done,empty_env),TUnit,!kontinuation))) 
+        | _ -> raise (Failure "Internal type inconsistency"))
+      | _ -> raise (Failure "Found lambda instead of location")
 
 
   (*===============================================
     # deref entry point 
    ===============================================*)
   let deref wn ptr = (add_ptr ptr);
-    let (loc,ty) = find_name LOCATION (-wn) in  
-    match ty with
-      | TLoc tt -> plug_outerkont (Term (Deref loc)) (Executing (Done,tt,!kontinuation))
-      | _ -> raise (Failure "Internal type inconsistency")
+    match (find_name LOCATION (-wn)) with
+      | (Loc loc,ty) -> (match ty with
+        | TLoc tt -> plug_outerkont (Term (Closure((Deref loc),empty_env))) (Executing (Done,tt,!kontinuation))
+        | _ -> raise (Failure "Internal type inconsistency"))
+      | _ -> raise (Failure "Found lambda instead of location")
 
 end
 
