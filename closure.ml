@@ -375,15 +375,6 @@ struct
         | Letrec (nvar,ty,a,b) -> reduce (Closure((Let (nvar,Fix (Lam (nvar,ty,a)),b)),env)) outerk
         | _ -> raise (Failure "Implementation mistake")))
 
-
-        (* allocation *)
-
-
-        (* Hash*)
-
-
-        (* operands *)
-
     | _ -> raise (Failure "Incorrect Kontinuation")
 
 

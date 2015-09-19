@@ -71,37 +71,46 @@ struct
     | Unit
     | Sequence of term * term
     | Oper of operands * term * term
-    | Location of closure ref * int 
+    | Location of closure ref * int (* @SC *)
     | Set of term * term
     | Deref of term
     | Alloc of term
     | Foreign of pointer * ty
     | Hash of term
 
-  (* environment *)
-  and environment = string -> term
+  (* environment @SC *)
+  and environment = string -> closure
 
-  (* closure *)
+  (* closure @SC *)
   and closure =  
     | Closure of term * environment
     | Clapp of closure * closure
+    | CLet of variable * closure  * closure
+    | CFix of closure
+    | CSet of closure * closure
+    | CDeref of closure
+    | CAlloc of closure
+    | CIf of closure * closure * closure
+    | COper of operands * closure * closure
+    | CHash of closure
+    | CSequence of closure * closure
 
   (* kontinuations *)
   type mlkont =
     | Done
-    | Ifkont of term * term * mlkont * environment
+    | Ifkont of closure * closure * mlkont  
     | Appkont of closure * mlkont 
     | Appkont2 of closure * mlkont
-    | Allockont of mlkont * environment
-    | Hashkont of mlkont * environment
-    | Operkont of operands * term * mlkont * environment
-    | Operkont2 of operands * term * mlkont  * environment
-    | Derefkont of mlkont * environment
-    | Setkont of term * mlkont * environment
-    | Setkont2 of term * mlkont * environment
-    | Letkont of variable * term * mlkont * environment
-    | Sequencekont of term * mlkont * environment
-    | Fixkont of mlkont * environment
+    | Allockont of mlkont 
+    | Hashkont of mlkont 
+    | Operkont of operands * closure * mlkont 
+    | Operkont2 of operands * closure * mlkont  
+    | Derefkont of mlkont 
+    | Setkont of closure * mlkont 
+    | Setkont2 of closure * mlkont 
+    | Letkont of variable * closure * mlkont 
+    | Sequencekont of closure * mlkont 
+    | Fixkont of mlkont 
 
   (* FFI kontinuations *)
   type ffikont =
@@ -118,15 +127,16 @@ struct
 
   (* the control *)
   type control =
-    | Term of closure 
+    | Term of closure (* @SC *)
     | Word of word
+
 
 
   (*--------------------------------------------*)
   (*                   State                    *)       
   (*--------------------------------------------*)
 
-  (* deal with non closure locations *)
+  (* @SC deal with non closure locations *)
   type mapcontent = Cl of closure | Loc of term
 
   (* global lists *)
@@ -195,7 +205,12 @@ struct
 
   (* helper @SC *)
   let error () = raise (Failure "Typing error")
-  
+
+  (* helper *)
+  let closure_isvalue = function
+    | Closure (x,_) -> isvalue x
+    | _ -> false
+
   (* marshall out to words *) 
   let marshallout closure typ : word =  (* @SC *)
     let wordify = function
@@ -257,53 +272,56 @@ struct
           | _ -> (raise (Failure "Found location where lambda expected")))
       else Closure(Foreign (word,typ),empty_env))
 
-  (* handle ML kontinuations: @SC *)
+  (* handle ML kontinuations @SC *)
   let rec plug_kont (cl : closure) (outerk : ffikont) : alpha = 
     match outerk with Executing (k,typ,outerk') -> 
     let update k' = Executing (k',typ,outerk') in
     (match cl with Clapp _ -> raise (Failure "Double Closure") 
-      | Closure (v,_) -> (match k with
-        | Ifkont (c2,c3,k',e) -> (match v with 
-          | Bool true   -> reduce (Closure(c2,e)) (update k')
-          | Bool false  -> reduce (Closure(c3,e)) (update k')
+      | v -> (match k with
+        | Ifkont (c2,c3,k') -> (match v with 
+          | Closure (Bool true,_)  -> reduce c2 (update k')
+          | Closure (Bool false,_) -> reduce c2 (update k')
           | _ -> error() ) 
-        | Allockont (k',e) -> lcount := !lcount + 1; 
-          (plug_kont (Closure((Location ((ref cl),!lcount)),e)) (update k'))
-        | Hashkont (k',e) -> (match v with
-          | Hash (Location (a,i)) -> plug_kont (Closure((Int i),e)) (update k')
+        | Allockont (k') -> lcount := !lcount + 1; 
+          (plug_kont (Closure(Location ((ref v),!lcount),empty_env)) (update k'))
+        | Hashkont (k') -> (match v with
+          | Closure ((Location (a,i)),_) ->
+            plug_kont (Closure((Int i),empty_env)) (update k')
           | _ -> error())
-        | Operkont (op,c2,k',e) -> reduce (Closure((Oper (op,v,c2)),e)) (update k')
-        | Operkont2 (op,Int a,k',e) -> (match v with
-          | Int b -> plug_kont (Closure((match op with 
+        | Operkont (op,c2,k') -> reduce (COper (op,v,c2)) (update k')
+        | Operkont2 (op,Closure(Int a,_),k') -> (match v with
+          | Closure(Int b,_) -> plug_kont (Closure((match op with 
             | PLUS -> Int (a+b)
             | MINUS -> Int (a-b)
             | TIMES -> Int (a*b)
             | EQUALS -> Bool (a = b)
             | LESSTHEN -> Bool (a < b)
-            | LARGERTHEN -> Bool (a > b) ),e)) (update k')
+            | LARGERTHEN -> Bool (a > b) ),empty_env)) (update k')
           | _ -> error())
-        | Derefkont (k',e) -> (match v with 
-            |  (Location (a,_)) -> (plug_kont !a outerk)
-            | _ -> error())
-        | Setkont (c2,k',e) -> reduce (Closure((Set(v,c2)),e)) (update k')
-        | Setkont2 (Location(a,_),k',e) -> a := cl; (plug_kont (Closure(Unit,e)) (update k'))
-        | Letkont (nv,c2,k',e) -> reduce (Closure(c2,(update_env nv v e))) (update k')
-        | Sequencekont (c2,k',e) -> (match v with
-          | Unit -> reduce (Closure(c2,e)) (update k')
+        | Derefkont (k') -> (match v with
+          | Closure((Location (a,_)),_) -> (plug_kont !a (update k'))
           | _ -> error())
-        | Fixkont (k',e) -> (match v with 
-          | (Lam (nv,ty,a)) -> reduce (Closure(a,(update_env nv (Fix (Lam (nv,ty,a))) e))) (update k')
+        | Setkont (c2,k') -> reduce (CSet(v,c2)) (update k')
+        | Setkont2 (Closure(Location (a,_),_),k') -> 
+            a := v; (plug_kont (Closure(Unit,empty_env)) (update k'))
+        | Letkont (nv,Closure(a,env),k') -> reduce (Closure(a,(update_env nv v env))) (update k')
+        | Sequencekont (c2,k') -> (match v with
+          | Closure (Unit,_) -> (reduce c2 (update k'))
+          | _ -> error())
+        | Fixkont (k') -> (match v with
+          | (Closure((Lam (nv,ty,a)),env) as x) -> reduce (Closure(a,(update_env nv (CFix x) env))) (update k')
           | _ -> error())
         | Appkont (c2,k') -> reduce (Clapp (cl,c2)) (update k')
         | Appkont2 (cl1,k') -> (match cl1 with
-          | Closure((Lam(nvar,ty,a)),e1) ->  reduce (Closure(a,(update_env nvar v e1))) (update k')
-          | Closure(Foreign(ptr,ty),e1)  -> (match ty with
-            | TApp (lt,rt) -> kontinuation := Waiting(k,TApp(rt,typ),outerk');
-              call_trace ptr (marshallout cl lt) 
-            | _ -> raise (Failure "Internal Type inconsistency"))
+          | Closure((Lam(nvar,ty,a)),e1)  -> reduce (Closure(a,(update_env nvar v e1))) (update k')
+          | Closure(Foreign(ptr,ty),e1) ->
+            (match ty with
+              | TApp (lt,rt) -> kontinuation := Waiting(k,TApp(rt,typ),outerk');
+                call_trace ptr (marshallout v lt) 
+                | _ -> raise (Failure "Internal Type inconsistency"))
           | _ -> error())
         | Done -> plug_outerkont (Term cl) (Marshallout (typ,outerk'))
-        | _ -> raise (Failure "forget something")))
+        | _ -> error()))
     | _ -> raise (Failure "Can't plug outer")
 
   (* handle outer kontinuations *) (* @SC *)
@@ -327,29 +345,38 @@ struct
     let update k' = Executing (k',typ,outerk') in
     (* handle closure @SC *)
     (match cl with 
-      | Clapp (Closure(v1,e1) as x,y) when (isvalue v1) -> reduce y (update (Appkont2(x,k)))  
-      | Clapp (x,y) -> reduce x (update (Appkont(y,k)))
+      | Clapp (x,y) when (closure_isvalue x) -> reduce y (update (Appkont2(x,k)))  
+      | CSet (Closure(Location (a,i),_) as x,b) -> reduce b (update (Setkont2(x,k)))
+      | COper (op,a,b) when closure_isvalue a -> reduce b (update (Operkont2 (op,a,k)))
+
+      (* basic closures *)
       | Closure (t,env) ->
       (match t with
 
-        (* Evaluation order and high-level transitions @SC *)
+        (* variable substitution *)
+        | Var nv -> reduce (env nv) outerk
+
+        (* values *)
         | v when (isvalue t) -> (plug_kont (Closure(v,env)) outerk)
-        | Var nv -> reduce (Closure((env nv),env)) outerk
-        | If (a,b,c) -> (reduce (Closure(a,env)) (update (Ifkont(b,c,k,env))))
-        | Sequence (a,b) -> reduce (Closure(a,env)) (update (Sequencekont (b,k,env)))
-        | Set (Location (a,i),b) -> reduce (Closure(b,env)) (update (Setkont2(Location (a,i),k,env)))
-        | Set (a,b) -> reduce (Closure(a,env)) (update (Setkont(b,k,env)))
-        | Deref a -> reduce (Closure(a,env)) (update (Derefkont (k,env)))
-        | Alloc a -> (reduce (Closure(a,env)) (update (Allockont (k,env))))
-        | Hash a -> reduce (Closure(a,env)) (update (Hashkont (k,env)))
-        | Oper (op,a,b) when isvalue a -> reduce (Closure(b,env)) (update (Operkont2 (op,a,k,env)))
-        | Oper (op,a,b) -> reduce (Closure(a,env)) (update (Operkont (op,b,k,env)))
-        | App (t1,t2) -> reduce (Clapp(Closure (t1,env),Closure (t2,env))) outerk
-        | Fix a -> reduce (Closure(a,env)) (update (Fixkont (k,env)))
-        | Let (nv,a,b) -> reduce (Closure(a,env)) (update (Letkont(nv,b,k,env)))
+
+        (* compressed propagators @SC *)
+        | App (t1,t2) -> reduce (Closure(t1,env)) (update (Appkont(Closure (t2,env),k))) 
+        | If (a,b,c) -> reduce (Closure(a,env)) (update  (Ifkont(Closure(b,env),Closure(c,env),k)))
+        | Let (nv,a,b) -> reduce (Closure(a,env)) (update (Letkont(nv,Closure (b,env),k)))
+        | Fix a -> reduce (Closure(a,env)) (update (Fixkont k)) 
+        | Sequence (a,b) -> reduce (Closure(a,env)) (update (Sequencekont(Closure(b,env),k))) 
+        | Set (a,b) -> reduce (Closure(a,env)) (update (Setkont(Closure(b,env),k))) 
+        | Deref a -> reduce (Closure(a,env)) (update (Derefkont k))
+        | Alloc a -> reduce (Closure(a,env)) (update (Allockont k))
+        | Hash a -> reduce (Closure(a,env))  (update (Hashkont k)) 
+        | Oper (op,a,b) -> reduce (Closure(a,env)) (update (Operkont(op,Closure(b,env),k)))
+
+        (* syntactic sugar *)
         | Letrec (nvar,ty,a,b) -> reduce (Closure((Let (nvar,Fix (Lam (nvar,ty,a)),b)),env)) outerk
-        | _ -> raise (Failure "Implementation mistake")))
-      | _ -> error()
+        | _ -> raise (Failure "Implementation mistake"))
+      |_ -> error())
+
+    | _ -> raise (Failure "Incorrect Kontinuation")
 
 
   (*===============================================
@@ -404,7 +431,7 @@ struct
       | _ -> raise (Failure "Could not decontroline type")
     in
     let (ty,_) = (conv wt 1) in
-    plug_outerkont (Word w) (Marshallin (ty,Executing ((Allockont (Done,empty_env)), (TLoc ty), !kontinuation)))
+    plug_outerkont (Word w) (Marshallin (ty,Executing ((Allockont Done), (TLoc ty), !kontinuation)))
 
 
   (*===============================================
@@ -413,7 +440,7 @@ struct
   let set wn w ptr = (add_ptr ptr);
     match (find_name LOCATION (-wn)) with
       | (Loc loc,ty) -> (match ty with
-        | TLoc tt -> plug_outerkont (Word w) (Marshallin (tt,Executing (Setkont2(loc,Done,empty_env),TUnit,!kontinuation))) 
+        | TLoc tt -> plug_outerkont (Word w) (Marshallin (tt,Executing (Setkont2((Closure(loc,empty_env)),Done),TUnit,!kontinuation))) 
         | _ -> raise (Failure "Internal type inconsistency"))
       | _ -> raise (Failure "Found lambda instead of location")
 
