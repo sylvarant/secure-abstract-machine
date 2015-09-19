@@ -50,7 +50,6 @@ struct
   type name = nametype * int
 
 
-
   (* sec types *)
   type ty = TBool
     | TInt
@@ -340,7 +339,7 @@ struct
 
         (* set location *)
         | Set (Location (a,_),b) when (isvalue b) -> a := (Closure (b,env)); (plug_kont (Closure(Unit,env)) outerk)
-        | Set (Location (a,i),b) -> reduce (Closure(b,env)) (update (Setkont(Location (a,i),k,env)))
+        | Set (Location (a,i),b) -> reduce (Closure(b,env)) (update (Setkont2(Location (a,i),k,env)))
         | Set (a,b) -> reduce (Closure(a,env)) (update (Setkont(b,k,env)))
 
         (* dereference *)
