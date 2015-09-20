@@ -16,11 +16,13 @@
  *-----------------------------------------------------------------------------*/
 #include <string.h>
 #include <stdarg.h>
-#include "attackerlang.h"
-#include "attacker.h"
 #include "PMA.h"
 
-#ifdef JOB
+#ifndef FIDES_PMA
+#include "Secure/cesk.h"
+#endif
+
+#ifdef SANCUS_SPM
     #define __MSP430_INTRINSICS_H_
     #include <msp430.h>
     #define MAIN_TYPE int __attribute__((section(".init9"), aligned(2)))
@@ -91,106 +93,9 @@ extern void die (const char * format, ...)
  *  Internal functionality
  *-----------------------------------------------------------------------------*/
 
-static char * tostring(Value);
-/* 
- * ===  FUNCTION  ======================================================================
- *         Name:    generatestring
- *  Description:    do internal work
- * =====================================================================================
- */
-static char * generatestring(char * start,int c,Value v1,Value v2){
-    int sstart = strlen(start);
-    char ** list = (char **) mymalloc(c*(sizeof(char *)));
-
-    list[0] = tostring(v1);
-    sstart   += strlen(list[0]);
-    list[0] = tostring(v2);
-    sstart   += strlen(list[1]);
-
-    char * str = (char *) mymalloc(sizeof(char) * (sstart+(c-1)+2));
-    str[0] ='\0';
-    strcat(str,start);
-
-    for(int i = 0; i <c ; ++i){
-        strcat(str,list[i]);
-        if(i == c-1) {}
-        else{ strcat(str,",");}
-    }
-
-    strcat(str,")");
-
-    #ifndef STATIC_MEM
-    for(int i = 0; i < c ; i++){
-        free(list[i]);
-    }
-    free(list);
-    #endif
-    return str;
+void debug_name(long name){
+  DEBUG_PRINT(("Received name %lu from CESK\n",name))
 }
-
-
-/* 
- * ===  FUNCTION  ======================================================================
- *         Name:    tostring
- *  Description:    conver Value into string, used to debug
- * =====================================================================================
- */
-static char * tostring (Value par){
-
-    if(par.b == NULL) {
-        DEBUG_PRINT(("NULL VALUE !"))
-        exit(1);    
-    }
-    
-    if (par.b->t == BOOLEAN){
-        char * str = (char *) mymalloc(6 * sizeof(char));
-        sprintf(str,"%s",par.b->value ? "true" : "false");
-        return str;
-    }
-    else if(par.l->t == LAM){
-        return generatestring("lambda(",2,par.l->argument,par.l->body); 
-    }
-    else if(par.s->t == SYMBOL){
-        char * str  =(char *) mymalloc(sizeof(char) * (strlen(par.s->name) + 1));
-        str[0] ='\0';
-        strcat(str,par.s->name);
-        return str;
-    }
-    else if(par.a->t == APPLICATION){
-       return generatestring("appl(",2,par.a->function,par.a->argument); 
-    }
-    else if(par.c->t == CLOSURE){
-        return generatestring("clo(",2,par.c->x,par.c->body);
-    }
-    else if(par.ii->t == IF){
-        Value hack = MakeApplication(par.ii->cons,par.ii->alt); 
-        char * str = generatestring("if(",2,par.ii->cond,hack);
-        #ifndef STATIC_MEM 
-        free(hack.b);
-        #endif
-        return str;
-    }
-    else if(par.lt->t == LET){
-        Value hack = MakeApplication(par.lt->var,par.lt->expr); 
-        char * str= generatestring("let(",2,hack,par.lt->body);
-        #ifndef STATIC_MEM 
-        free(hack.b);
-        #endif
-        return str;
-    }
-    else if(par.co->t == COMP){
-        return generatestring("=_a(",2,par.co->left,par.co->right);
-    }
-    else if(par.i->t == NAME){
-        char * str = (char *) mymalloc(5 * sizeof(char));
-        str[0] = '\0';
-        return str;
-    }
-    else{die("unkown result\n");}
-
-    return NULL;
-}
-
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -206,25 +111,10 @@ MAIN_TYPE main(int argc, char * argv[]){
         malloc_ptr = memory;
     #endif
 
-	// setup the attacker CEK
-    startstate(); 
-
-    // setup the secure cek+ -> results in the module code being located at position 1
-    sload(); 
-
-    // handshake between the attacker and the secure
-	setup_secure(evaluate,mymalloc);
-
-    DEBUG_PRINT(("Loading Module...")) 
-
-    Value ret =
-        MakeApplication(MakeLambda(MakeApplication(MakeApplication(MakeLambda(MakeSymbol( "x" ),MakeSymbol( "x" )),
-        (MakeName(1))),MakeSymbol( "x" )),MakeSymbol( "x" )),MakeBoolean(1)); 
-
-    DEBUG_PRINT(("Evaluating...")) 
-    Value ans = run(ret);
-    char * result = tostring(ans);
-    printf("%s\n",result);
+    // Start the secure cesk machine
+    DEBUG_PRINT(("Starting CESK...")) 
+    long name = start();
+    debug_name(name);
 
     DEBUG_PRINT(("Done...")) 
 

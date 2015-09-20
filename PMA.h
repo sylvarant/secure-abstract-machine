@@ -3,7 +3,7 @@
  *
  *       Filename:  PMA.h
  *
- *    Description:  PMA setup
+ *    Description:  PMA setup -> Sancus is a previously used pma mechanism
  *
  *         Author:  tea
  *        Company:  Superstar Uni
@@ -13,9 +13,6 @@
 
 #ifndef PMA_INCLUDED
 #define PMA_INCLUDED
-
-// The protocol
-#include "attackerlang.h"
 
 
 /*-----------------------------------------------------------------------------
@@ -30,7 +27,7 @@
 #endif
 
 // CPU target
-#ifdef SPM
+#ifdef SANCUS_SPM
 
     #define __ANNOTATE(x) __attribute__((annotate(x)))
 
@@ -44,10 +41,26 @@
     #define FUNCTIONALITY SPM_FUNC("SPM1") static
     #define SECRET_DATA SPM_DATA("SPM1") static 
     #define ENTRYPOINT SPM_ENTRY("SPM1") extern
+
+#else
+#ifdef FIDES_PMA
+
+    #include <fides_libc/string.h>
+    #define MALLOC malloc
+    #define FREE(x) if((x) != NULL) free((x))
+
+    #define LOCAL static
+    #define SECRET_DATA static
+    #define FUNCTIONALITY extern 
+    #define ENTRYPOINT ENTRY_POINT
+
+    #include <PCBAC/spm_annotations.h>
+
 #else 
     #define FUNCTIONALITY static
     #define SECRET_DATA static
     #define ENTRYPOINT extern
+#endif
 #endif
 
 #ifdef STATIC_MEM
@@ -56,15 +69,6 @@ typedef unsigned int mysize;
 #include <stdlib.h>
 typedef size_t mysize; 
 #endif 
-
-// type define
-typedef Value (*teval) (void*);
-typedef void*  (*tmalloc) (mysize);
-
-// entry points
-ENTRYPOINT void * secure_eval(int seccode);
-ENTRYPOINT void setup_secure(void* (*e)(void *),void* (*m)());
-ENTRYPOINT void sload (void);
 
 // aux
 extern void die (const char * format, ...);
