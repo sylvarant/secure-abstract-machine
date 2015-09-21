@@ -91,9 +91,10 @@ struct secSequence;
 struct secSet; 
 struct secOper; 
 struct secFix; 
+struct secDeref; 
 
 enum secTag { BOOLEAN, UNIT, CLOSURE, LAM, SYMBOL, APPLICATION, LET, IF, INSEC,
-  LETREC, INT, LOCATION, ALLOC, HASH, SEQUENCE, SET, OPER, FIX};
+  LETREC, INT, LOCATION, ALLOC, HASH, SEQUENCE, SET, OPER, FIX, DEREF};
 enum opTag { PLUS, MIN, TIMES };
 
 union TERM {
@@ -170,7 +171,7 @@ struct secIf {
 
 struct FI{
     enum secTag t;
-    long (*foreingptr)(long);
+    long (*foreignptr)(long);
 };
 
 struct secError{
@@ -231,6 +232,10 @@ struct secFix {
     union TERM term;
 };
 
+struct secDeref {
+    enum secTag t;
+    union TERM term;
+};
 
 // simplifications
 typedef union TERM TERM;
@@ -253,7 +258,6 @@ typedef union kont_t{
     struct operkont * o;
     struct derefkont * dr;
     struct setkont * s;
-    struct setkont2 * s2;
     struct sequencekont * sq;
     struct fixkont * f;
 } kont;
@@ -304,18 +308,18 @@ struct appkont {
     enum Tagk t; 
     TERM expr;
     ENV * env;
-    kont * k;
+    kont k;
 };
 
 struct appkont2 {
     enum Tagk t; 
     TERM expr;
-    kont * k;
+    kont k;
 };
 
 struct letkont{
     enum Tagk t;
-    kont * k;
+    kont k;
     ENV * env;
     TERM var;
     TERM body;
@@ -323,7 +327,7 @@ struct letkont{
 
 struct ifkont{
     enum Tagk t;
-    kont * k;
+    kont k;
     ENV * env;
     TERM cons;
     TERM alt;
@@ -331,47 +335,47 @@ struct ifkont{
 
 struct allockont {
     enum Tagk t;
-    kont * k;
+    kont k;
     ENV * env;
 };
 
 struct hashkont {
     enum Tagk t;
-    kont * k;
+    kont k;
     ENV * env;
 };
 
 struct operkont {
     enum Tagk t; // distinguish by tags
     enum opTag op;
-    kont * k;
+    kont k;
     TERM other;
     ENV * env;
 };
 
 struct derefkont {
     enum Tagk t;
-    kont * k;
+    kont k;
     ENV * env;
 };
 
 struct setkont {
     enum Tagk t; // distinguish by tags
-    kont * k;
+    kont k;
     TERM other; 
     ENV * env;
 };
 
 struct sequencekont { 
     enum Tagk t; // distinguish by tags
-    kont * k;
+    kont k;
     TERM other; 
     ENV * env;
 };
 
 struct fixkont {
     enum Tagk t; // distinguish by tags
-    kont * k;
+    kont k;
     ENV * env;
 };
 

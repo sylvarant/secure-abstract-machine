@@ -55,8 +55,8 @@ const ffikont Empty = {.e = &ee };
 FUNCTIONALITY int secinsert(ENV *table,void *key,void * value);
 FUNCTIONALITY void * secget(ENV *table,void *key);
 FUNCTIONALITY ENV * seccopyenv(ENV * table);
-FUNCTIONALITY int getname(void);
-FUNCTIONALITY TERM run(TERM,state *);
+FUNCTIONALITY long getname(void);
+FUNCTIONALITY long run(TERM,state *);
 FUNCTIONALITY state * startstate();
 FUNCTIONALITY TERM MakesecBoolean(unsigned int);
 FUNCTIONALITY TERM MakesecLambda(TERM,TYPE,TERM);
@@ -75,7 +75,7 @@ FUNCTIONALITY TERM MakesecSet(TERM,TERM);
 FUNCTIONALITY TERM MakesecOper(enum opTag,TERM,TERM);
 FUNCTIONALITY TERM MakesecFix(TERM);
 FUNCTIONALITY TERM MakeFI(long ptr);
-FUNCTIONALITY TERM applycont(TERM v,state * st);
+FUNCTIONALITY long applycont(TERM v,state * st);
 FUNCTIONALITY mysize mystrlen(const char *str);
 FUNCTIONALITY int mycmp(void *s1, void *s2);
 FUNCTIONALITY int mycmpint(void *s1,void *s2);
@@ -90,12 +90,23 @@ typedef union control_t {
   long l;
 } CONTROL;
 
+
+/*-----------------------------------------------------------------------------
+ *  map storage structure
+ *-----------------------------------------------------------------------------*/
+typedef struct tuple_t {
+  TERM t;
+  TYPE ty;
+} TUPLE;
+
+
 /*-----------------------------------------------------------------------------
  *  Shared Global Variables
  *-----------------------------------------------------------------------------*/
-SECRET_DATA void * (*inseceval)(void *);
-SECRET_DATA void * (*insecmalloc)(mysize);
 SECRET_DATA state * mystate;
+
+// const empty tbl
+const ENV etbl = {NULL,mycmp,0};
 
 /*-----------------------------------------------------------------------------
  *  Custom memory scheme
@@ -420,6 +431,22 @@ FUNCTIONALITY TERM MakesecHash(TERM value)
 
 /* 
  * ===  FUNCTION  ======================================================================
+ *         Name:    MakesecDeref
+ *  Description:    create a TERM derec
+ * =====================================================================================
+ */
+FUNCTIONALITY TERM MakesecDeref(TERM value)
+{
+  TERM v;
+  struct secDeref * data = (struct secDeref*) mymalloc(sizeof(struct secDeref));
+  v.d = data;
+  v.d->t = DEREF;
+  v.d->term = value;
+  return v;
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
  *         Name:    MakesecSequence
  *  Description:    create a TERM sequence
  * =====================================================================================
@@ -497,7 +524,7 @@ FUNCTIONALITY TERM MakeFI(long arg)
   TERM i ;
   struct FI * inter = mymalloc(sizeof(struct FI)); 
   i.f = inter;
-  i.f->foreingptr = (void *) arg;
+  i.f->foreignptr = (void *) arg;
   i.f->t = INSEC;
   return i;
 }
@@ -521,6 +548,16 @@ FUNCTIONALITY void * secget(ENV *table,void *key)
   return NULL;
 }
 
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    getname
+ *  Description:    Get a fresh name n 
+ * =====================================================================================
+ */
+static long getname(void){
+    static long x = 0;
+    return ++x;
+}
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -591,9 +628,150 @@ FUNCTIONALITY ENV * seccopyenv(ENV * table)
   return new;
 }
 
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    type_check
+ *  Description:    do a simple type check
+ * =====================================================================================
+ */
+FUNCTIONALITY void type_check(TYPE req,TYPE given)
+{
+    if (req.t != given.t) exit(1);
+
+    switch(req.t)
+    {
+        case T(INT):
+        case T(BOOLEAN): 
+        case T(UNIT): break;
+
+        case T(REF):{
+            type_check(*(req.r.type),*(given.r.type));
+            break;
+        }
+
+        case T(ARROW):{
+            type_check(*(req.a.left),*(given.a.left));  
+            type_check(*(req.a.right),*(given.a.right));
+            break;
+        }
+
+        default :{ exit(1); }
+    }
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    marshall in
+ *  Description:    convert longs to ML values
+ * =====================================================================================
+ */
+FUNCTIONALITY TERM marshallin(long word, TYPE ty,state * mystate) 
+{
+  switch(ty.t)
+  {
+    case T(BOOLEAN) : {
+      if (word == 0) return False;
+      return True;
+    }
+
+    case T(INT) : { return MakesecInt(word); }
+
+    case T(UNIT) : { return Unit; } 
+
+    case T(REF) : {
+      TUPLE * match = secget(mystate->namemap,(void *)(-word)); 
+      type_check(match->ty,ty);
+      return match->t;
+    }
+    case T(ARROW) : {
+      if (word < 0) {
+        TUPLE * match = secget(mystate->namemap,(void *)(-word)); 
+        type_check(match->ty,ty);
+        return match->t;
+      } else {
+        return MakeFI(word);
+      }
+    }
+  }
+  exit(1);
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    marshall out
+ *  Description:    convert ML values to longs
+ * =====================================================================================
+ */
+FUNCTIONALITY long marshallout(TERM term, TYPE ty,state * mystate) 
+{
+  switch(ty.t)
+  {
+    case T(BOOLEAN) : {
+      return term.b->value; 
+    }
+
+    case T(INT) : { return term.in->value; }
+
+    case T(UNIT) : { return 0; } 
+
+    case T(REF) :  
+    case T(ARROW) : {
+      if(term.f->t == INSEC) {
+        return (long) term.f->foreignptr;
+      }
+      TUPLE * match = mymalloc(sizeof(TUPLE));
+      match->t = term;
+      match->ty = ty;
+      long word = getname();
+      secinsert(mystate->environment,(void*)word,match);
+      return -word;
+    }
+
+  }
+  exit(1);
+}
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    plug_outerkont
+ *  Description:    handle the outer kontinuations
+ * =====================================================================================
+ */
 FUNCTIONALITY long plug_outerkont(CONTROL c,state * mystate)
 {
-   return 1;
+  switch(mystate->continuation.e->t) {
+
+    case EMPTY : { exit(1);  }
+
+    case EXECUTING : {  return run(c.t,mystate); }
+
+    case MARSHALLIN : {
+      mystate->continuation = mystate->continuation.m->outerk;
+      TERM v = marshallin(c.l,mystate->continuation.m->ty,mystate); 
+      CONTROL n;
+      n.t = v;
+      return plug_outerkont(n,mystate);
+    }
+
+    case MARSHALLOUT : {
+      mystate->continuation = mystate->continuation.m->outerk;
+      long word = marshallout(c.t,mystate->continuation.m->ty,mystate);
+      return word;
+    }
+
+    case WAITING : {  
+      ffikont kont;
+      struct executing * data = (struct executing*) mymalloc(sizeof(struct executing));
+      kont.x = data;
+      kont.x->t = EXECUTING;
+      kont.x->k = mystate->continuation.w->k;
+      kont.x->ty = *(mystate->continuation.w->ty.a.right); 
+      kont.x->outerk = mystate->continuation.w->outerk;
+      mystate->continuation = kont;
+      return plug_outerkont(c,mystate);  
+    }
+  }
+  exit(1);
 }
 
 /* 
@@ -602,7 +780,7 @@ FUNCTIONALITY long plug_outerkont(CONTROL c,state * mystate)
  *  Description:    apply continuation
  * =====================================================================================
  */
-FUNCTIONALITY TERM applycont(TERM v,state * st)
+FUNCTIONALITY long applycont(TERM v,state * st)
 {
   // Patter macht the executing
   if( st->continuation.x->t != EXECUTING ) exit(1); 
@@ -612,7 +790,7 @@ FUNCTIONALITY TERM applycont(TERM v,state * st)
   if(k->a->t == APPKONT)
   {
     TERM temp = k->a->expr;
-    kont * kk = k->a->k; 
+    kont kk = k->a->k; 
     st->environment = k->a->env;
     k->a2       = (struct appkont2 *) mymalloc(sizeof(struct appkont2));
     k->a2->t    = APPKONT2;
@@ -627,7 +805,7 @@ FUNCTIONALITY TERM applycont(TERM v,state * st)
     {
       secinsert(cl->env,cl->x.s->name,v.b);
       st->environment  = cl->env;
-      k = k->a2->k;
+      *k = k->a2->k;
       return run(cl->body,st);
     }
     else{
@@ -637,7 +815,7 @@ FUNCTIONALITY TERM applycont(TERM v,state * st)
   }
   else if(k->d->t == DONE){
     // st->continuation = k.r->k;
-    return v;     
+    return 1;     
   }
   else if(k->lt->t == LETKONT)
   {
@@ -645,7 +823,7 @@ FUNCTIONALITY TERM applycont(TERM v,state * st)
     struct letkont * klet = k->lt;
     secinsert(klet->env,klet->var.s->name,v.b);
     st->environment = klet->env;
-    k = klet->k;
+    *k = klet->k;
     return run(klet->body,st);
   }
   else if(k->i->t == IFKONT)
@@ -653,7 +831,7 @@ FUNCTIONALITY TERM applycont(TERM v,state * st)
     DEBUG_PRINT(("IFKONT"))
     struct ifkont * kif = k->i;
     st->environment = kif->env;
-    k = kif->k;
+    *k = kif->k;
     if(v.b->value) { return run(kif->cons,st); }
       else { return run(kif->alt,st); }
   }
@@ -669,7 +847,7 @@ FUNCTIONALITY TERM applycont(TERM v,state * st)
  *  Description:    run the cek
  * =====================================================================================
  */
-static TERM run(TERM expr, state * st){
+static long run(TERM expr, state * st){
 
   // Patter macht the executing
   if( st->continuation.x->t != EXECUTING ) exit(1); 
@@ -695,41 +873,38 @@ static TERM run(TERM expr, state * st){
   }
   else if(expr.a->t == APPLICATION)
   {
-    kont * prev = NULL;
-    if(k != NULL){prev = k;}
-    k = mymalloc(sizeof(kont));
-    k->a = (struct appkont *) mymalloc(sizeof(struct appkont)); 
-    k->a->t = APPKONT;
-    k->a->expr = expr.a->argument;
-    k->a->env  = seccopyenv(st->environment);
-    k->a->k    = prev;
+    kont n;
+    n.a = (struct appkont *) mymalloc(sizeof(struct appkont)); 
+    n.a->t = APPKONT;
+    n.a->expr = expr.a->argument;
+    n.a->env  = seccopyenv(st->environment);
+    n.a->k    = *k;
+    *k = n;
     return run(expr.a->function,st);
   }
   else if(expr.lt->t == LET)
   {
     DEBUG_PRINT(("LET"))
-    kont * prev = NULL;
-    if(k != NULL) prev = k;
-    k = mymalloc(sizeof(kont));
-    k->lt = (struct letkont *) mymalloc(sizeof(struct letkont));
-    k->lt->t = LETKONT;
-    k->lt->var = expr.lt->var;
-    k->lt->body = expr.lt->body;
-    k->lt->env  = st->environment;
-    k->lt->k    = prev;
+    kont n; 
+    n.lt = (struct letkont *) mymalloc(sizeof(struct letkont));
+    n.lt->t = LETKONT;
+    n.lt->var = expr.lt->var;
+    n.lt->body = expr.lt->body;
+    n.lt->env  = st->environment;
+    n.lt->k = *k;
+    *k = n;
     return run(expr.lt->expr,st);
   }
   else if(expr.i->t == IF){
     DEBUG_PRINT(("IF"))
-    kont * prev = NULL;
-    if(k != NULL) prev = k;
-    k = mymalloc(sizeof(kont));
-    k->i = (struct ifkont *) mymalloc(sizeof(struct ifkont));
-    k->i->t = IFKONT;
-    k->i->cons = expr.i->cons;
-    k->i->alt = expr.i->alt;
-    k->i->env  = st->environment;
-    k->i->k    = prev;
+    kont n; 
+    n.i = (struct ifkont *) mymalloc(sizeof(struct ifkont));
+    n.i->t = IFKONT;
+    n.i->cons = expr.i->cons;
+    n.i->alt = expr.i->alt;
+    n.i->env  = st->environment;
+    n.i->k = *k;
+    *k = n;
     return run(expr.i->cond,st);
   }
   else if(expr.f->t == INSEC){
@@ -766,21 +941,66 @@ static TERM run(TERM expr, state * st){
 }
 
 
-/* 
- * ===  FUNCTION  ======================================================================
- *         Name:    getname
- *  Description:    Get a fresh name n 
- * =====================================================================================
- */
-static int getname(void){
-    static char x = 0;
-    return ++x;
-}
+
+
 
 
 /*-----------------------------------------------------------------------------
- *  namemap for the left machine
+ *  The entry points
  *-----------------------------------------------------------------------------*/
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    convert_type
+ *  Description:    convert word representation to type
+ * =====================================================================================
+ */
+
+static long tenponent(int c) { 
+  long r = 1;
+  for(int i = 0; i < c ; i++){
+    r *= 10;
+  }
+  return r;
+}
+
+struct two { TYPE ty; int depth; };
+FUNCTIONALITY struct two convert_type(long l,int depth)
+{
+  struct two ret;
+  switch((l%10)) {
+    case 1 : {
+      ret.ty = T(Boolean);
+      ret.depth = depth;
+      return ret;
+    }
+    case 2 : {
+      ret.ty = T(Int);
+      ret.depth = depth;
+      return ret;
+    }
+    case 3 : {
+      ret.ty = T(Unit);
+      ret.depth = depth;
+      return ret;
+    }
+    case 4 : {
+      struct two right = convert_type(l/10,depth+1); 
+      long divisor = tenponent(1+(right.depth - depth));
+      struct two left = convert_type(l/divisor,right.depth+1);
+      ret.ty = MakeTArrow(left.ty,right.ty);
+      ret.depth = left.depth;
+      return ret;
+    }
+    case 5 : {
+      struct two recurse = convert_type(l/10,depth+1);
+      ret.ty = MakeTRef(recurse.ty);
+      ret.depth = recurse.depth;
+      return ret;
+    }
+  }
+  exit(1);
+}
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -788,21 +1008,158 @@ static int getname(void){
  *  Description:    run the cesk
  * =====================================================================================
  */
-ENTRYPOINT long application(long name,long argument){
-  return 1;
+ENTRYPOINT long application(long name,long argument)
+{
+  TUPLE * match = secget(mystate->namemap,(void *)(-name)); 
+  if(match == NULL || match->ty.t != T(ARROW)) exit(1);
+
+  ENV * envtable = (ENV *) mymalloc(sizeof(ENV));  
+  *envtable = etbl;
+  mystate->environment = envtable;
+
+  ffikont ekont; 
+  ffikont kont; 
+  union kont_t app;
+  struct appkont * sdata = (struct appkont*) mymalloc(sizeof(struct appkont));
+  app.a = sdata;
+  app.s->t = APPKONT2;
+  app.s->k = Done;
+  app.s->other = match->t;
+  app.s->env = envtable; // duplication no issue here
+
+  struct executing * data = (struct executing*) mymalloc(sizeof(struct executing));
+  ekont.x = data;
+  ekont.x->t = EXECUTING;
+  ekont.x->k = app;
+  ekont.x->ty = *(match->ty.a.right); 
+  ekont.x->outerk = mystate->continuation;
+
+  struct marshall * mdata = (struct marshall*) mymalloc(sizeof(struct marshall));
+  kont.m = mdata;
+  kont.m->t = MARSHALLIN;
+  kont.m->ty = *(match->ty.a.left);
+  kont.m->outerk = mystate->continuation; 
+
+  CONTROL c;
+  c.l = argument;
+  return plug_outerkont(c,mystate);
 }
 
-ENTRYPOINT long allocation (long argument,long type){
-  return 1;
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    allocation
+ *  Description:    create locations for an argument and suggested type
+ * =====================================================================================
+ */
+ENTRYPOINT long allocation (long argument,long type)
+{
+  struct two conversion = convert_type(type,1);
+
+  ENV * envtable = (ENV *) mymalloc(sizeof(ENV));  
+  *envtable = etbl;
+  mystate->environment = envtable;
+
+  ffikont ekont; 
+  ffikont kont; 
+  union kont_t all;
+  struct allockont * sdata = (struct allockont*) mymalloc(sizeof(struct allockont));
+  all.al = sdata;
+  all.al->t = ALLOCKONT;
+  all.al->k = Done;
+  all.al->env = envtable; // duplication no issue here
+
+  struct executing * data = (struct executing*) mymalloc(sizeof(struct executing));
+  ekont.x = data;
+  ekont.x->t = EXECUTING;
+  ekont.x->k = all;
+  ekont.x->ty = MakeTRef(conversion.ty); 
+  ekont.x->outerk = mystate->continuation;
+
+  struct marshall * mdata = (struct marshall*) mymalloc(sizeof(struct marshall));
+  kont.m = mdata;
+  kont.m->t = MARSHALLIN;
+  kont.m->ty = conversion.ty;
+  kont.m->outerk = mystate->continuation; 
+
+  CONTROL c;
+  c.l = argument;
+  return plug_outerkont(c,mystate);
 }
 
-ENTRYPOINT long set(long name,long argument){
-  return 1;
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    set
+ *  Description:    set locations
+ * =====================================================================================
+ */
+ENTRYPOINT long set(long name,long argument)
+{
+  TUPLE * match = secget(mystate->namemap,(void *)(-name)); 
+  if(match == NULL || match->ty.t != T(REF)) exit(1);
+
+  ENV * envtable = (ENV *) mymalloc(sizeof(ENV));  
+  *envtable = etbl;
+  mystate->environment = envtable;
+
+  ffikont ekont; 
+  ffikont kont; 
+  union kont_t sk2;
+  struct setkont * sdata = (struct setkont*) mymalloc(sizeof(struct setkont));
+  sk2.s = sdata;
+  sk2.s->t = SETKONT2;
+  sk2.s->k = Done;
+  sk2.s->other = match->t;
+  sk2.s->env = envtable; // duplication no issue here
+
+  struct executing * data = (struct executing*) mymalloc(sizeof(struct executing));
+  ekont.x = data;
+  ekont.x->t = EXECUTING;
+  ekont.x->k = sk2;
+  ekont.x->ty = match->ty; 
+  ekont.x->outerk = mystate->continuation;
+
+  struct marshall * mdata = (struct marshall*) mymalloc(sizeof(struct marshall));
+  kont.m = mdata;
+  kont.m->t = MARSHALLIN;
+  kont.m->ty = T(Unit);
+  kont.m->outerk = mystate->continuation; 
+
+  CONTROL c;
+  c.l = argument;
+  return plug_outerkont(c,mystate);
 }
 
-ENTRYPOINT long dereference(long name){
-  return 1;
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:    dereference
+ *  Description:    dereference locations
+ * =====================================================================================
+ */
+ENTRYPOINT long dereference(long name)
+{
+  TUPLE * match = secget(mystate->namemap,(void *)(-name)); 
+  if(match == NULL || match->ty.t != T(REF)) exit(1);
+
+  TERM expr = MakesecDeref(match->t);
+
+  ENV * envtable = (ENV *) mymalloc(sizeof(ENV));  
+  *envtable = etbl;
+  mystate->environment = envtable;
+
+  ffikont kont; 
+  struct executing * data = (struct executing*) mymalloc(sizeof(struct executing));
+  kont.x = data;
+  kont.x->t = EXECUTING;
+  kont.x->k = Done;
+  kont.x->ty = match->ty; 
+  kont.x->outerk = mystate->continuation;
+  mystate->continuation = kont;
+
+  CONTROL c;
+  c.t = expr;
+  return plug_outerkont(c,mystate);
 }
+
 
 /* 
  * ===  FUNCTION  ======================================================================
@@ -810,7 +1167,10 @@ ENTRYPOINT long dereference(long name){
  *  Description:    upload program to storage
  * =====================================================================================
  */
-ENTRYPOINT long start (void){
+ENTRYPOINT long start (void)
+{
+  // the great begining
+  mystate = mymalloc(sizeof(state));
 
   // simplification
   TERM expr = MakesecLambda(MakesecSymbol( "x" ),T(Int),MakesecSymbol( "x" )) ;
@@ -822,15 +1182,13 @@ ENTRYPOINT long start (void){
   kont.x->k = Done;
   kont.x->ty = type; 
   kont.x->outerk = Empty;
-  mystate = mymalloc(sizeof(state));
 
-  static ENV tbl = {NULL,mycmp,0};
   ENV * envtable = (ENV *) mymalloc(sizeof(ENV));  
-  *envtable = tbl;
+  *envtable = etbl;
   mystate->environment = envtable;
 
   ENV * funtbl = (ENV *) mymalloc(sizeof(ENV));  
-  *funtbl = tbl;
+  *funtbl = etbl;
   funtbl->cmp = mycmpint;
   mystate->namemap = funtbl;
   mystate->continuation = kont;
