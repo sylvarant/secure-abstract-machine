@@ -74,7 +74,7 @@ FUNCTIONALITY TERM MakesecSequence(TERM,TERM);
 FUNCTIONALITY TERM MakesecSet(TERM,TERM);
 FUNCTIONALITY TERM MakesecOper(enum opTag,TERM,TERM);
 FUNCTIONALITY TERM MakesecFix(TERM);
-FUNCTIONALITY TERM MakeFI(long ptr);
+FUNCTIONALITY TERM MakeFI(long ptr,TYPE ty);
 FUNCTIONALITY long applycont(TERM v,state * st);
 FUNCTIONALITY mysize mystrlen(const char *str);
 FUNCTIONALITY int mycmp(void *s1, void *s2);
@@ -519,12 +519,13 @@ FUNCTIONALITY TERM MakesecFix(TERM term)
  *  Description:    create a TERM FI component
  * =====================================================================================
  */
-FUNCTIONALITY TERM MakeFI(long arg)
+FUNCTIONALITY TERM MakeFI(long arg,TYPE ty)
 {   
   TERM i ;
   struct FI * inter = mymalloc(sizeof(struct FI)); 
   i.f = inter;
   i.f->foreignptr = (void *) arg;
+  i.f->ty = ty;
   i.f->t = INSEC;
   return i;
 }
@@ -689,7 +690,7 @@ FUNCTIONALITY TERM marshallin(long word, TYPE ty,state * mystate)
         type_check(match->ty,ty);
         return match->t;
       } else {
-        return MakeFI(word);
+        return MakeFI(word,ty);
       }
     }
   }
@@ -728,6 +729,7 @@ FUNCTIONALITY long marshallout(TERM term, TYPE ty,state * mystate)
     }
 
   }
+  DEBUG_PRINT(("Marshalling failed for type %d",ty.t))
   exit(1);
 }
 
@@ -746,16 +748,16 @@ FUNCTIONALITY long plug_outerkont(CONTROL c,state * mystate)
     case EXECUTING : {  return run(c.t,mystate); }
 
     case MARSHALLIN : {
-      mystate->continuation = mystate->continuation.m->outerk;
       TERM v = marshallin(c.l,mystate->continuation.m->ty,mystate); 
+      mystate->continuation = mystate->continuation.m->outerk;
       CONTROL n;
       n.t = v;
       return plug_outerkont(n,mystate);
     }
 
     case MARSHALLOUT : {
-      mystate->continuation = mystate->continuation.m->outerk;
       long word = marshallout(c.t,mystate->continuation.m->ty,mystate);
+      mystate->continuation = mystate->continuation.m->outerk;
       return word;
     }
 
@@ -787,58 +789,167 @@ FUNCTIONALITY long applycont(TERM v,state * st)
   struct executing * ffik = (st->continuation.x);
   kont * k = &ffik->k;
 
-  if(k->a->t == APPKONT)
+  switch(k->d->t) 
   {
-    TERM temp = k->a->expr;
-    kont kk = k->a->k; 
-    st->environment = k->a->env;
-    k->a2       = (struct appkont2 *) mymalloc(sizeof(struct appkont2));
-    k->a2->t    = APPKONT2;
-    k->a2->expr = v;
-    k->a2->k    = kk;
-    return run(temp,st);
-  }
-  else if(k->a2->t == APPKONT2)
-  {
-    struct secClosure * cl = k->a2->expr.c;
-    if(cl->t == CLOSURE)
+
+    case IFKONT:
     {
-      secinsert(cl->env,cl->x.s->name,v.b);
-      st->environment  = cl->env;
-      *k = k->a2->k;
-      return run(cl->body,st);
-    }
-    else{
-      DEBUG_PRINT(("Expected to Apply a Closure"))
-      exit(1);
-    }
-  }
-  else if(k->d->t == DONE){
-    // st->continuation = k.r->k;
-    return 1;     
-  }
-  else if(k->lt->t == LETKONT)
-  {
-    DEBUG_PRINT(("Let kont"))
-    struct letkont * klet = k->lt;
-    secinsert(klet->env,klet->var.s->name,v.b);
-    st->environment = klet->env;
-    *k = klet->k;
-    return run(klet->body,st);
-  }
-  else if(k->i->t == IFKONT)
-  {
-    DEBUG_PRINT(("IFKONT"))
-    struct ifkont * kif = k->i;
-    st->environment = kif->env;
-    *k = kif->k;
-    if(v.b->value) { return run(kif->cons,st); }
+      struct ifkont * kif = k->i;
+      st->environment = kif->env;
+      *k = kif->k;
+      if(v.b->value) { return run(kif->cons,st); }
       else { return run(kif->alt,st); }
+    }
+
+    case LETKONT:
+    {
+      struct letkont * klet = k->lt;
+      secinsert(klet->env,klet->var.s->name,v.b);
+      st->environment = klet->env;
+      *k = klet->k;
+      return run(klet->body,st);
+    }
+
+    case ALLOCKONT:
+    {
+      *k = k->al->k;
+      return applycont(MakesecLocation(v),st);
+    }
+
+    case HASHKONT:
+    {
+      *k = k->h->k;
+      return applycont(MakesecInt(v.loc->count),st);
+    }
+
+    case DEREFKONT:
+    {
+      *k = k->dr->k;
+      return applycont(*(v.loc->value),st);
+    }
+
+    case SETKONT:
+    {
+      TERM expr = MakesecSet(v,k->s->other);
+      *k = k->s->k;
+      return run(expr,st);
+    }
+
+    case SETKONT2:
+    {
+      *(v.loc->value) = v;
+      *k = k->s->k;
+      return applycont(Unit,st);
+    }
+
+    case SEQUENCEKONT:
+    {
+      TERM expr = MakesecSet(v,k->sq->other);
+      *k = k->sq->k;
+      return run(expr,st);
+    }
+
+    case FIXKONT:
+    {
+      secinsert(st->environment,v.c->x.s->name,MakesecFix(v).b);
+      *k = k->f->k;
+      return run(v.c->body,st);
+    }
+
+    case APPKONT: 
+    {
+      TERM temp = k->a->expr;
+      kont kk = k->a->k; 
+      st->environment = k->a->env;
+      k->a2       = (struct appkont2 *) mymalloc(sizeof(struct appkont2));
+      k->a2->t    = APPKONT2;
+      k->a2->expr = v;
+      k->a2->k    = kk;
+      return run(temp,st);
+    }
+
+    case OPERKONT: 
+    {
+      TERM expr = MakesecOper(k->o->op,v,k->o->other);
+      *k = k->o->k;
+      return run(expr,st);
+    }
+
+    case OPERKONT2:
+    {
+      int left = k->o->other.in->value; 
+      int right = v.in->value;
+      TERM expr;
+      switch(k->o->op)
+      {
+        case PLUS: { expr = MakesecInt(left + right); break; }
+        case MIN: { expr = MakesecInt(left - right); break; }
+        case TIMES: { expr = MakesecInt(left * right); break; }
+        case EQUALS: { expr = MakesecBoolean(left == right); break; }
+        case LESS: { expr = MakesecBoolean(left < right); break; }
+        default : { exit(1); }
+      }
+      *k = k->o->k;
+      return applycont(expr,st);
+    }
+
+    case APPKONT2: 
+    {
+      TERM v1 =  k->a2->expr;
+      if(v1.b->t == CLOSURE)
+      {
+        struct secClosure * cl = k->a2->expr.c;
+        secinsert(cl->env,cl->x.s->name,v.b);
+        st->environment  = cl->env;
+        *k = k->a2->k;
+        return run(cl->body,st);
+      }
+      else if(v1.b->t == INSEC) {
+        ffikont new;
+        struct marshall * mdata = (struct marshall*) mymalloc(sizeof(struct marshall));
+        new.m = mdata;
+        new.m->t = WAITING;
+        new.m->ty = MakeTArrow(*(v1.f->ty.a.right),ffik->ty);
+        new.m->outerk = ffik->outerk;  
+        st->continuation = new;
+        long word = marshallout(v,*(v1.f->ty.a.left),st);
+        long result = v1.f->foreignptr(word);
+
+        // handle return back
+        ffikont in;
+        struct marshall * idata = (struct marshall*) mymalloc(sizeof(struct marshall));
+        in.m = idata;
+        in.m->t = MARSHALLIN;
+        in.m->ty = *(v1.f->ty.a.right);
+        in.m->outerk = st->continuation;  
+        st->continuation = in;
+        CONTROL c;
+        c.l = result;
+        plug_outerkont(c,st); 
+      }
+      else{
+        DEBUG_PRINT(("Expected to Apply a Closure / Foreign"))
+        exit(1);
+      }
+    }
+
+    case DONE : 
+    {
+      ffikont new;
+      struct marshall * mdata = (struct marshall*) mymalloc(sizeof(struct marshall));
+      new.m = mdata;
+      new.m->t = MARSHALLOUT;
+      new.m->ty = ffik->ty;
+      new.m->outerk = ffik->outerk;  
+      st->continuation = new;
+      CONTROL c;
+      c.t = v;
+      return plug_outerkont(c,st);
+    }
   }
-  else{
-    DEBUG_PRINT(("Secure :: Unkown Closure"))
-    exit(1);
-  }
+
+  DEBUG_PRINT(("Secure :: Unkown Closure"))
+  exit(1);
 }
 
 /* 
@@ -854,7 +965,8 @@ static long run(TERM expr, state * st){
   struct executing * ffik = (st->continuation.x);
   kont * k = &ffik->k;
 
-  if(expr.b->t == BOOLEAN || expr.c->t == CLOSURE){
+  if(expr.b->t == BOOLEAN || expr.c->t == CLOSURE || expr.in->t == INT || expr.u->t == UNIT
+    || expr.f->t == INSEC){
       return applycont(expr,st); 
   }
   else if (expr.s->t == SYMBOL)
@@ -877,14 +989,13 @@ static long run(TERM expr, state * st){
     n.a = (struct appkont *) mymalloc(sizeof(struct appkont)); 
     n.a->t = APPKONT;
     n.a->expr = expr.a->argument;
-    n.a->env  = seccopyenv(st->environment);
+    n.a->env  = st->environment;
     n.a->k    = *k;
     *k = n;
     return run(expr.a->function,st);
   }
   else if(expr.lt->t == LET)
   {
-    DEBUG_PRINT(("LET"))
     kont n; 
     n.lt = (struct letkont *) mymalloc(sizeof(struct letkont));
     n.lt->t = LETKONT;
@@ -896,7 +1007,6 @@ static long run(TERM expr, state * st){
     return run(expr.lt->expr,st);
   }
   else if(expr.i->t == IF){
-    DEBUG_PRINT(("IF"))
     kont n; 
     n.i = (struct ifkont *) mymalloc(sizeof(struct ifkont));
     n.i->t = IFKONT;
@@ -907,32 +1017,24 @@ static long run(TERM expr, state * st){
     *k = n;
     return run(expr.i->cond,st);
   }
-  else if(expr.f->t == INSEC){
-
-    DEBUG_PRINT(("Calling the attacker"))
-        
-    // make Continue continuation
-    kont * prev = NULL;
-
-  /*      st->continuation = mymalloc(sizeof(kont)); 
-        st->continuation->cc    = (struct excont *) mymalloc(sizeof(struct excont));
-        st->continuation->cc->t = SECONT;
-        st->continuation->cc->k = prev;
-        st->continuation->cc->env = seccopyenv(st->environment);
-*/
-       /* void * dle = inseceval((expr.i->term).b); 
-        Value ptr = {.b = dle};
-        
-        if(ptr.b->t == BOOLEAN){
-            return run(MakesecBoolean(ptr.b->value),st);       
-        }
-        else if(ptr.c->t == CLOSURE){
-            int name = getname();
-            //secinsert(mystate->storage,(void *)c,(void *) (MakesecSymbol("y")).b);
-            secinsert(mystate->namemap,(void *)name, (void *) (MakesecSymbol("y")).b );
-            return run(MakesecLambda(MakeSI(MakeApplication(ptr,MakeName(name))),MakesecSymbol("y")),st); 
-        } */
-    return run(MakeFI(1),st);
+  else if(expr.sq->t == SEQUENCE) {
+    kont n;
+    n.sq = (struct sequencekont *) mymalloc(sizeof(struct sequencekont));
+    n.sq->t = SEQUENCEKONT;
+    n.sq->other = expr.sq->right;
+    n.sq->env = st->environment;
+    n.sq->k = *k;
+    *k = n;
+    return run(expr.sq->left,st);
+  }
+  else if(expr.d->t == DEREF) {
+    kont n;
+    n.dr = (struct derefkont *) mymalloc(sizeof(struct derefkont));
+    n.dr->t = DEREFKONT;
+    n.dr->env = st->environment;
+    n.dr->k = *k;
+    *k = n;
+    return run(expr.d->term,st);
   }
   else{
     DEBUG_PRINT(("Unknown State"))

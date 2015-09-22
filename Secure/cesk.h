@@ -95,7 +95,7 @@ struct secDeref;
 
 enum secTag { BOOLEAN, UNIT, CLOSURE, LAM, SYMBOL, APPLICATION, LET, IF, INSEC,
   LETREC, INT, LOCATION, ALLOC, HASH, SEQUENCE, SET, OPER, FIX, DEREF};
-enum opTag { PLUS, MIN, TIMES };
+enum opTag { PLUS, MIN, TIMES, EQUALS, LESS };
 
 union TERM {
     struct secBoolean * b;
@@ -171,6 +171,7 @@ struct secIf {
 
 struct FI{
     enum secTag t;
+    TYPE ty;
     long (*foreignptr)(long);
 };
 

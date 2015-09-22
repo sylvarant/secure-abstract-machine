@@ -94,7 +94,7 @@ extern void die (const char * format, ...)
  *-----------------------------------------------------------------------------*/
 
 void debug_name(long name){
-  DEBUG_PRINT(("Received name %lu from CESK\n",name))
+  DEBUG_PRINT(("Received name %ld from CESK\n",-name))
 }
 
 /* 
