@@ -69,25 +69,6 @@ int putchar(int c)
  #endif
 
 
-/*-----------------------------------------------------------------------------
- *  Auxiliary shared functionality
- *-----------------------------------------------------------------------------*/
-
-/* 
- * ===  FUNCTION  ======================================================================
- *         Name:    die
- *  Description:    in blitz.h
- * =====================================================================================
- */
-extern void die (const char * format, ...)
-{
-    va_list vargs;
-    va_start (vargs, format);
-    vfprintf (stderr, format, vargs);
-    fprintf (stderr, ".\n");
-    exit (EXIT_FAILURE);
-}
-
 
 /*-----------------------------------------------------------------------------
  *  Internal functionality

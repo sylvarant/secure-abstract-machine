@@ -1,41 +1,32 @@
 #==============================================
-# Secure Lambda Calculus Implementation
+# Secure CESK Machine Implementation
 #==============================================
-
 
 #=============================
 # Compilation
 #=============================
 
-$ make      :: for sancus
 $ make exec :: for mac / linux
+$ make one; cd Secure; make; cd ..; make output :: for fides, requires working fides toolchain install
+$ make spmproto.elf  :: for sancus, requires working sancus toolchain install
 
 
 #=============================
 # Details
 #=============================
 
-This is a Sancus enabled implementation of the result of the CEK^+ machine that results from the syntactic correspondence.
+This is a Fides/sancus enabled implementation of the CESK machine that results from the syntactic correspondence.
 Given that malloc and free where not available during most of our tests on Sancus,
-the implementation still focusses on a simple static memory buffer which is only flushed at the end.
+that part of the implementation still focusses on a simple static memory buffer which is only flushed at the end.
 Using this for anything more than a prototype will require adding the necessary free's.
 
-The PMA: the entrypoints are defined in :
+The PMA: the entrypoints are defined in:
     * PMA.h
 
-The secure cek+ for MiniML consists of the files :
-    * securecek.h
-    * securecek.c
-At compile time these files are converted into a protected module of the PMA mechanism called SPM in Sancus.
-The secure side features doubles of the functionality to create terms in the attacker language to minimize
-call backs, as well as to reduce the requirements on the attacker side.
+The secure cesk for MiniML consists of the files :
+    * Secure/cesk.h
+    * Secure/cesk.c
 
-The unknown context is a CEK implementation of MiniML_a
-This could in a sense be any C program but we chose a CEK to easily debug the behaviour of the secure cek+.
-it consists of the files :
-    * attacklanguage.h
-    * environment.h
-    * environment.c
-    * attacker.c
+The attacker resides in : 
     * main.c 
 

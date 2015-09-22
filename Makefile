@@ -39,6 +39,13 @@ FIDESFLAGS = -fPIC -fno-stack-protector -fno-builtin $(SPECIAL_CONFS) -fno-commo
 
 all: $(MAC_EXEC)
 
+one: CC=gcc 
+one: CFLAGS= -c -std=gnu99 -DFIDES  $(FIDESFLAGS)
+one : $(OBJECTS)
+
+output:
+	$(LD) $(OBJECTS) $(FIDESSPM) -o $(FIDES_EXEC) $(LIB_DIRS) $(LIBS) 
+
 $(TARGET_NO_HMAC): $(NON_FIDES_OBJECTS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
