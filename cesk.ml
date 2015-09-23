@@ -277,7 +277,7 @@ struct
           | Unit -> reduce c2 e (update k')
           | _ -> error())
         | Fixkont (k',e) -> (match t with 
-          | (Lam (nv,ty,a)) -> reduce a (update_env nv (Fix (Lam (nv,ty,a))) e) (update k')
+          | (Closure (nv,ty,a,e1)) as cl -> reduce a (update_env nv (Fix cl) e) (update k')
           | _ -> error())
         | Appkont (c2,env,k') -> reduce (App(t,c2)) env (update k')
         | Appkont2 (v1,k') -> (match v1 with
