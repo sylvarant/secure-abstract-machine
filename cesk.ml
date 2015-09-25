@@ -88,16 +88,16 @@ struct
     | Ifkont of term * term * mlkont * environment
     | Appkont of term * environment * mlkont 
     | Appkont2 of term * mlkont
-    | Allockont of mlkont * environment
-    | Hashkont of mlkont * environment
+    | Allockont of mlkont 
+    | Hashkont of mlkont 
     | Operkont of operands * term * mlkont * environment
-    | Operkont2 of operands * term * mlkont  * environment
-    | Derefkont of mlkont * environment
+    | Operkont2 of operands * term * mlkont 
+    | Derefkont of mlkont 
     | Setkont of term * mlkont * environment
-    | Setkont2 of term * mlkont * environment
+    | Setkont2 of term * mlkont 
     | Letkont of variable * term * mlkont * environment
     | Sequencekont of term * mlkont * environment
-    | Fixkont of mlkont * environment
+    | Fixkont of mlkont 
 
   (* FFI kontinuations *)
   type ffikont =
@@ -252,32 +252,32 @@ struct
           | Bool true   -> reduce c2 e (update k')
           | Bool false  -> reduce c3 e (update k')
           | _ -> error() ) 
-        | Allockont (k',e) -> lcount := !lcount + 1; 
-          (plug_kont (Location ((ref t),!lcount)) e (update k'))
-        | Hashkont (k',e) -> (match t with
-          | Hash (Location (a,i)) -> plug_kont (Int i) e (update k')
+        | Allockont (k') -> lcount := !lcount + 1; 
+          (plug_kont (Location ((ref t),!lcount)) empty_env (update k'))
+        | Hashkont (k') -> (match t with
+          | Hash (Location (a,i)) -> plug_kont (Int i) empty_env (update k')
           | _ -> error())
         | Operkont (op,c2,k',e) -> reduce (Oper (op,t,c2)) e (update k')
-        | Operkont2 (op,Int a,k',e) -> (match t with
+        | Operkont2 (op,Int a,k') -> (match t with
           | Int b -> plug_kont (match op with 
             | PLUS -> Int (a+b)
             | MINUS -> Int (a-b)
             | TIMES -> Int (a*b)
             | EQUALS -> Bool (a = b)
             | LESSTHEN -> Bool (a < b)
-            | LARGERTHEN -> Bool (a > b)) e (update k')
+            | LARGERTHEN -> Bool (a > b)) empty_env (update k')
           | _ -> error())
-        | Derefkont (k',e) -> (match t with 
-            |  (Location (a,_)) -> (plug_kont !a e outerk)
+        | Derefkont k' -> (match t with 
+            |  (Location (a,_)) -> (plug_kont !a empty_env outerk)
             | _ -> error())
         | Setkont (c2,k',e) -> reduce (Set(t,c2)) e (update k')
-        | Setkont2 (Location(a,_),k',e) -> a := t; (plug_kont Unit e (update k'))
+        | Setkont2 (Location(a,_),k') -> a := t; (plug_kont Unit empty_env (update k'))
         | Letkont (nv,c2,k',e) -> reduce c2 (update_env nv t e) (update k')
         | Sequencekont (c2,k',e) -> (match t with
           | Unit -> reduce c2 e (update k')
           | _ -> error())
-        | Fixkont (k',e) -> (match t with 
-          | (Closure (nv,ty,a,e1)) as cl -> reduce a (update_env nv (Fix cl) e) (update k')
+        | Fixkont k' -> (match t with 
+          | (Closure (nv,ty,a,e1)) as cl -> reduce a (update_env nv (Fix cl) e1) (update k')
           | _ -> error())
         | Appkont (c2,env,k') -> reduce (App(t,c2)) env (update k')
         | Appkont2 (v1,k') -> (match v1 with
@@ -317,16 +317,16 @@ struct
       | Var nv -> reduce (env nv) env outerk
       | If (a,b,c) -> (reduce a env (update (Ifkont(b,c,k,env))))
       | Sequence (a,b) -> reduce a env (update (Sequencekont (b,k,env)))
-      | Set (Location (a,i),b) -> reduce b env (update (Setkont2(Location (a,i),k,env)))
+      | Set (Location (a,i),b) -> reduce b env (update (Setkont2(Location (a,i),k)))
       | Set (a,b) -> reduce a env (update (Setkont(b,k,env)))
-      | Deref a -> reduce a env (update (Derefkont (k,env)))
-      | Alloc a -> (reduce a env (update (Allockont (k,env))))
-      | Hash a -> reduce a env (update (Hashkont (k,env)))
-      | Oper (op,a,b) when isvalue a -> reduce b env (update (Operkont2 (op,a,k,env)))
+      | Deref a -> reduce a env (update (Derefkont k))
+      | Alloc a -> (reduce a env (update (Allockont k)))
+      | Hash a -> reduce a env (update (Hashkont k))
+      | Oper (op,a,b) when isvalue a -> reduce b env (update (Operkont2 (op,a,k)))
       | Oper (op,a,b) -> reduce a env (update (Operkont (op,b,k,env)))
       | App (x,y) when isvalue x -> reduce y env (update (Appkont2(x,k)))  
       | App (x,y) -> reduce x env (update (Appkont(y,env,k)))
-      | Fix a -> reduce a env (update (Fixkont (k,env)))
+      | Fix a -> reduce a env (update (Fixkont k))
       | Let (nv,a,b) -> reduce a env (update (Letkont(nv,b,k,env)))
       | Letrec (nvar,ty,a,b) -> reduce (Let (nvar,Fix (Lam (nvar,ty,a)),b)) env outerk
       | _ -> raise (Failure "Implementation mistake"))
@@ -384,7 +384,7 @@ struct
       | _ -> raise (Failure "Could not decontroline type")
     in
     let (ty,_) = (conv wt 1) in
-    plug_outerkont (Word w) empty_env (Marshallin (ty,Executing ((Allockont (Done,empty_env)), (TLoc ty), !kontinuation)))
+    plug_outerkont (Word w) empty_env (Marshallin (ty,Executing ((Allockont Done), (TLoc ty), !kontinuation)))
 
 
   (*===============================================
@@ -393,7 +393,7 @@ struct
   let set wn w ptr = (add_ptr ptr);
     let (loc,ty) = (find_name LOCATION (-wn)) in
       (match ty with
-        | TLoc tt -> plug_outerkont (Word w) empty_env (Marshallin (tt,Executing (Setkont2(loc,Done,empty_env),TUnit,!kontinuation))) 
+        | TLoc tt -> plug_outerkont (Word w) empty_env (Marshallin (tt,Executing (Setkont2(loc,Done),TUnit,!kontinuation))) 
         | _ -> raise (Failure "Internal type inconsistency"))
 
   (*===============================================
