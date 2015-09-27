@@ -340,7 +340,7 @@ struct
     (* example program *)
     let control = Lam("x",TApp(TInt,TInt),App(Var "x",(Int 2))) in
     let typ =  TApp(TApp(TInt,TInt),TInt) in 
-    let kont = Executing (Done,typ,Empty) in (* initial set up , execute with no small kontinuation, marshall out at the end*)
+    let kont = Executing (Done,typ,Empty) in 
     (add_ptr ptr); 
     plug_outerkont (Term control) empty_env kont
 
