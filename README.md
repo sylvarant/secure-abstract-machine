@@ -1,6 +1,8 @@
 Syntactic Correspondence
 ==============================
 
+[![Build Status](https://travis-ci.org/sylvarant/machine-correspondence.svg)](https://travis-ci.org/sylvarant/machine-correspondence)
+
 Ocaml implementation of each step of the CESK machine derivation
 
 Instructions :
