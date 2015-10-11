@@ -29,3 +29,6 @@ Technical notes :
 
 Tested on Ocaml v4.02.1 , no dependencies
 
+## License
+
+[Artistic License 2.0](http://www.perlfoundation.org/artistic_license_2_0)
