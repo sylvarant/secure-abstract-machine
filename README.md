@@ -1,33 +1,15 @@
-Syntactic Correspondence
-==============================
+A Secure Abstract Machine for ML
+=================================
 
-[![Build Status](https://travis-ci.org/sylvarant/machine-correspondence.svg)](https://travis-ci.org/sylvarant/machine-correspondence)
+This repository contains the implementation of the secure abstract machine for ML 
+detailed in the SEC@SAC 2016 paper: `Implementing a Secure Abstract Machine`.
 
-Ocaml implementation of each step of the CESK machine derivation
-
-Instructions :
---------------
-
-Run each file by typing `ocaml <filename>` in the command line
-
-File list :
+Repository overview :
 ------------
 
-* lts.ml          ::  Implements the LTS described in Section 3.1
-                        The memory protection is modelled by having MiniML hidden behind an abstract type
+* correspondence: Ocaml implementation of the functional correspondence used to derive the machine
 
-* kontinuation.ml :: The first transformation: context sensitive reduction
-
-* closure.ml      :: The second tranformation: closure conversion
-
-* refocussing.ml  :: The third transformation: refocussing
-
-* cesk.ml         :: The final transformation: unfolding closures
-
-Technical notes :
-------------------
-
-Tested on Ocaml v4.02.1 , no dependencies
+* abstract-machine: The abstract machine implementation
 
 ## License
 
