@@ -1,5 +1,6 @@
 A Secure Abstract Machine for ML
 =================================
+[![Build Status](https://travis-ci.org/sylvarant/secure-abstract-machine.svg?branch=master)](https://travis-ci.org/sylvarant/secure-abstract-machine)
 
 This repository contains the implementation of the secure abstract machine for ML 
 detailed in the SEC@SAC 2016 paper: `Implementing a Secure Abstract Machine`.
