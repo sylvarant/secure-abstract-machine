@@ -8,4 +8,4 @@ before_install:
   - opam init
   - eval `opam config env`
 
-script: ocaml lts.ml && ocaml kontinuation.ml && ocaml closure.ml && ocaml refocussing.ml && ocaml cesk.ml
+script: ./test.sh
