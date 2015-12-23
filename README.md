@@ -8,9 +8,9 @@ detailed in the SEC@SAC 2016 paper: `Implementing a Secure Abstract Machine`.
 Repository overview :
 ------------
 
-* correspondence: Ocaml implementation of the functional correspondence used to derive the machine
+* [correspondence](https://github.com/sylvarant/secure-abstract-machine/tree/master/correspondence): Ocaml implementation of the functional correspondence used to derive the machine
 
-* abstract-machine: The abstract machine implementation
+* [abstract-machine](https://github.com/sylvarant/secure-abstract-machine/tree/master/abstract-machine): The abstract machine implementation
 
 ## License
 
